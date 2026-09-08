@@ -1,110 +1,167 @@
-# Axon — the Model Loader
+# axon
 
-The one process in TinyBrains that is not Orion. It holds ONNX weights resident, evaluates each
-competitor's adapter under an operation count of its own keeping, runs the graph, holds every seat
-to the turn clock, and answers **one call per turn for a whole wave**. A second instance of the
-same binary stands beside Soma and is the platform's only data path for admission.
+Axon loads and runs competitors' ONNX models for TinyBrains. It is a Rust HTTP service with two
+roles: an admission process that checks and mirrors submissions, and a replica process that
+holds models in memory and returns actions for Kalam's match waves.
 
-The specification is [`design/v2/04-model-loader.md`](../design/v2/04-model-loader.md). Where this
-repository and that document disagree, the document is right and this is a bug.
+## The name
 
-```
-cargo test                                             # everything
-cargo test --test ants_adapter -- --nocapture          # what a real adapter costs
-cargo run                                              # the dialect version and its digest
-```
+An **axon** carries signals away from a neuron's cell body. Here it connects the platform's game
+observations to a model and brings back actions; [Soma](https://github.com/Tiny-Brains/soma) takes
+its name from the cell body.
 
-## What is built
+## Scope
 
-All six calls, against a real ONNX model. 51 tests.
+**It owns**
 
-**Three additions on 8 September 2026, at layer 08 §13's asking**, each one a thing admission
-cannot do without: `/inspect` returns the adapter's exact bytes as text, because `models.adapter`
-stores them under a `CHECK` that recomputes the hash and only this process holds them; a release URL
-answering `4xx` is now `ASSET_MISSING` with `fault: model` rather than a retryable `FETCH_FAILED`,
-so a competitor who forgot to attach `adapter.json` is told so instead of being retried three times
-and timed out; and `/validate` sets `over_budget`, which is what lets admission say
-`ADAPTER_OVER_BUDGET` rather than sending someone whose adapter is merely expensive back to the
-dialect specification.
+- Model residency, reference-counted holds, memory limits, and idle eviction.
+- The declarative adapter dialect, tensor conversion, and deterministic operation accounting.
+- ONNX execution and per-seat deadline handling.
+- Asset fetching, hash verification, graph inspection, adapter validation, and mirroring.
+- Directory, HTTP, and SigV4 S3-compatible model-store implementations.
 
-| | |
-|---|---|
-| `dialect/` | the adapter dialect: an opaque tensor, the evaluator, the operation count, the twenty-one operators, and `evaluator_digest` over the dialect rather than the binary |
-| `onnx_meta.rs` | the static facts `/inspect` reports, read straight out of the ONNX protobuf — no schema crate |
-| `model.rs` | the ONNX session, whether it batches, and one run under a deadline |
-| `residency.rs` | holds, LRU, the memory budget, the crash backstop |
-| `store.rs` | fetch by hash. **Three implementations**: a directory, an HTTP base, and **S3/R2 signed with SigV4** — layer 07 §8.1, and the only one a fleet can use, since the admission instance and every replica must share one store and across hosts there is no shared volume |
-| `server.rs` | the six calls, blocking and threaded |
+**It does not**
 
-```
-AXON_MODE=replica AXON_STORE_DIR=/var/lib/axon AXON_BIND=127.0.0.1:9090 axon
+- Decide admission or promotion; [Jodi](https://github.com/Tiny-Brains/jodi) interprets its results.
+- Understand game rules; [Ants](https://github.com/Tiny-Brains/ants) supplies observations and action semantics.
+- Schedule matches or persist results; [Kalam](https://github.com/Tiny-Brains/kalam) owns the wave.
+- Connect to Postgres or maintain the roster and ratings.
 
-# Or on S3/R2, which is what a deployment uses. The bucket is checked FIRST, before
-# AXON_STORE_DIR: a deployment that names one means it, and falling back to a directory
-# because a variable was missing would give this replica its own empty store, silently.
-AXON_MODE=replica AXON_BIND=127.0.0.1:9090 \
-  AXON_STORE_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com \
-  AXON_STORE_S3_BUCKET=tinybrains-models \
-  AXON_STORE_S3_REGION=auto \
-  AXON_STORE_S3_ACCESS_KEY=... AXON_STORE_S3_SECRET_KEY=... axon
-cargo run --release --example dump-fixtures -- /tmp/store    # seed a store from the test fixtures
+## Where it sits
+
+```text
+[Kalam] -- wave HTTP --> [Axon: replica]   -- read hashes --> [model store]
+[Jodi]  -- admission --> [Axon: admission] -- mirror bytes -> [same store]
+                                  |
+                             fetch allowlisted assets
 ```
 
-## What is not built yet
+| Direction | Party | Over | What moves |
+|---|---|---|---|
+| called by | Kalam | Replica-local HTTP | Load holds, observations, actions, and unloads |
+| called by | Jodi | Admission HTTP | Asset URLs, expected hashes, inspection and validation results |
+| reads | Shared model store | Directory, HTTP, or SigV4 | Weights and adapters addressed by hash |
+| writes | Shared model store | Directory or SigV4 | Verified admission assets |
+| calls | Allowed release hosts | HTTP transport with host checks | Submission bytes, admission role only |
 
-S3/R2 with SigV4 (layer 07), asynchronous loading — `/load` is synchronous, so `/resident` never
-reports `loading` — and a GPU pool for the `large` class. The stub in
-[`design/v2/03-spike/stub-loader/`](../design/v2/03-spike/stub-loader/) answers the same API and is
-what Kalam's wave loop was built against; axon answers it for real.
+Admission and replicas must use the same store: a verified model is useful only if every replica
+can retrieve its bytes. See the [system map](https://github.com/Tiny-Brains/devops#where-it-sits).
 
-## Three things worth knowing before reading the code
+## Interface
 
-**It is not built on `datalogic-rs`, and that was not the plan.** Layer 04 said "wrap or fork" the
-engine Orion evaluates workflow logic with. Wrapping does not work: 5.4 has no evaluation hook, no
-step budget and no fuel, its `CustomOperator` trait reaches the `tb.*` operators but not the core
-ones where an adapter actually spends, and its trace API materialises a JSON copy of the context
-per node. Forking pins the platform's fairness rule to internals the crate says may change. And the
-dialect is not JSONLogic anyway — it is a fixed subset plus twenty operators over a value JSON does
-not have. The cost of owning it is paid in `tests/differential.rs`, which runs the core subset
-through both engines and requires agreement.
+Requests and replies are JSON; [src/api.rs](src/api.rs) contains their serialized type definitions.
+Wrong-role calls return `404 NO_SUCH_CALL`. Set AXON_AUTH_TOKEN to require bearer authentication.
 
-**There is one deliberate divergence, and it is asserted in both directions.** `{"==": [0, null]}`
-is `false` here and `true` in `datalogic-rs`. JavaScript and the JSONLogic specification say false.
-The wave-turn spike found the quirk the hard way: a join written against a path that does not
-resolve silently selects the falsy elements and looks correct for exactly as long as the value it
-is compared against is zero. An adapter is the worst place to rediscover that.
+| Method and path | Role | Work performed | Main cost |
+|---|---|---|---|
+| POST /load | Both | Acquire model holds; admission also verifies and mirrors URL assets | Fetching, compilation, resident memory |
+| POST /play | Replica | Evaluate adapters and models for one wave turn | Adapter operations and ONNX execution |
+| POST /unload | Both | Release holds idempotently | Residency bookkeeping |
+| GET /resident | Both | List resident hashes and memory usage | Residency lookup |
+| POST /inspect | Admission | Read graph facts and the adapter's exact text | Metadata and size inspection |
+| POST /validate | Admission | Exercise reference observations against the adapter and graph | One validation run per case |
+| GET /healthz | Both | Report liveness | No model inference |
 
-**The dialect has no arithmetic on tensors**, and that is load-bearing rather than an omission.
-Computation belongs in the graph, where the FLOP cap prices it. Three budgets on three axes: the
-FLOP cap prices thinking, the operation count prices marshalling, and the compressed-size metric
-`S` prices knowledge. An adapter that could multiply matrices would collapse the first into the
-second.
+Pass the game's `budget_ops` and `deadline_ms` explicitly on play and validation calls.
+A load refusal's `fault` distinguishes `model` from `loader`; callers should branch on that field
+rather than maintain their own list of reason strings. Play results retain the caller's seat reference.
 
-## What the counter measured
+Dialect version 1 and `evaluator_digest` identify adapter semantics. The digest covers dialect
+implementation files rather than the whole binary; print the current values without starting a server:
 
-Against a real worst-case Ants observation — 128×128, 90 ants, 670 water runs — dumped from the
-spike engine (`tests/fixtures/ants-observation.json`):
+```sh
+cargo run -- --dialect
+```
 
-| | ops |
-|---|---|
-| a reference six-plane adapter, `in` | 197,272 |
-| the same, `out` | 1,265 |
-| deriving visibility, unrolled kernel | 217,269 |
-| deriving visibility, with `tb.dilate` | 32,777 |
-| measured cost | 1.8 ms per million operations |
+## Run it, test it
 
-That is what raised `adapter_ops_max` from 200,000 to **1,000,000** (`PROTOCOL.md` §8.3, decision
-6) and what added the twentieth operator. The full argument is in layer 04 §4.4.
+Run commands from this repository's root. No Orion or database is required.
 
-## What the loader costs
+- Stable Rust and Cargo; Cargo.toml does not declare a minimum compiler version.
+- ONNX Runtime is supplied through the ort dependency's download-binaries feature.
+- Initial dependency installation needs network access; HTTP tests need permission to bind loopback.
 
-One `/play` for a whole wave, over HTTP, real model and real observation: **~1.0 ms a seat**,
-linear in the wave. At K=32 that is 66 ms against a `turn_ms` of 1000 — with the engine and Orion,
-16% of the turn. Layer 03's provisional K=16 is conservative by a factor of two, for a Micro-class
-model; the classes go to 64 MiB, which is why K belongs to a deployment rather than to a constant.
+Start a replica with a fixture store in a temporary directory:
 
-**Batching is worth less than it sounds, and the measurement is in layer 04 §3.2.** A group runs as
-one inference only if the graph declares a dynamic leading dimension, and the benefit shrinks as
-the work per board grows: 2.05× at a 32×32 board, 1.11× at Ants' full 128×128, where one board
-already saturates the cores. Every seat sees a different observation, so every seat costs its own
-forward pass either way — batching amortises overhead, it does not avoid arithmetic.
+```sh
+AXON_DEMO_STORE=$(mktemp -d)
+cargo run --release --example dump-fixtures -- "$AXON_DEMO_STORE"
+AXON_MODE=replica AXON_STORE_DIR="$AXON_DEMO_STORE" AXON_BIND=127.0.0.1:9090 cargo run --release
+```
+
+In another terminal, check the unauthenticated local instance and run the tests:
+
+```sh
+curl --fail --silent --show-error http://127.0.0.1:9090/healthz
+cargo test
+```
+
+The suite has 51 tests: 48 exercise local behavior and three live S3 checks return early unless
+AXON_S3_LIVE is set. To exercise those checks, configure the S3 variables below and run
+`AXON_S3_LIVE=1 cargo test --test s3_live -- --nocapture` against a disposable test bucket.
+[tests/differential.rs](tests/differential.rs) compares the shared JSONLogic subset with datalogic-rs
+and pins the intentional equality difference; it is the adapter/workflow compatibility check.
+
+## What a deployment owes it
+
+[src/config.rs](src/config.rs) defines environment parsing and defaults. S3 takes precedence over
+a directory, which takes precedence over an HTTP store; incomplete S3 configuration fails startup.
+
+| Variable | Purpose | Missing or incorrect value |
+|---|---|---|
+| AXON_MODE | replica or admission | Defaults to replica; other values fail startup |
+| AXON_BIND | Listener address | Uses the loopback default |
+| AXON_AUTH_TOKEN | Secret bearer credential | Empty or absent disables authentication |
+| AXON_STORE_S3_BUCKET, AXON_STORE_S3_ENDPOINT | Shared S3 store location | Endpoint is required when a bucket is named |
+| AXON_STORE_S3_ACCESS_KEY, AXON_STORE_S3_SECRET_KEY | Secret store credentials | Required for S3; bad credentials cause store failures |
+| AXON_STORE_S3_REGION | Signing region | Defaults to auto; must match the store |
+| AXON_STORE_DIR, AXON_STORE_URL | Alternative directory or HTTP store | No selected store fails startup; HTTP is read-only |
+| AXON_FETCH_ALLOW_HOSTS | Admission asset host allowlist | Admission defaults to GitHub hosts; replica always uses an empty list |
+| AXON_MEMORY_BUDGET_BYTES, AXON_IDLE_TTL_S | Residency capacity and eviction | Defaults apply; insufficient capacity refuses holds |
+| AXON_MAX_WEIGHTS_BYTES, AXON_MAX_ADAPTER_BYTES | Asset size backstops | Defaults apply; oversized assets are refused |
+| AXON_THREADS, AXON_ADAPTER_THREADS, AXON_MAX_IN_FLIGHT | Execution capacity | Defaults apply; poor sizing constrains throughput |
+
+Capacity settings are tuning policy. Game budgets belong to the cartridge and arrive in requests.
+Replica URL rejection limits submitted asset fetching; it does not prevent access to its configured
+remote store or replace deployment network isolation.
+
+## Layout
+
+```text
+src/main.rs        service entry point and --dialect command
+src/api.rs         request and response types
+src/server.rs      HTTP routing, role checks, and call execution
+src/config.rs      environment configuration and store selection
+src/residency.rs   holds, eviction, and memory accounting
+src/model.rs       ONNX sessions, batching, and deadlines
+src/onnx_meta.rs   static graph inspection
+src/store.rs       directory, HTTP, and SigV4 stores
+src/dialect/       evaluator, tensor operators, budget, and semantic digest
+tests/             dialect, differential, ONNX, adapter, and live S3 checks
+examples/          fixture-store generator
+Dockerfile         service image build
+```
+
+## What must stay true
+
+- **The evaluator counts adapter work itself.** Dialect tests check deterministic charging and immediate budget refusal.
+- **Tensor arithmetic belongs in the model graph.** The dialect exposes conversion and arrangement operations without becoming an alternative inference engine.
+- **Tensors remain inside Axon.** The HTTP contract carries game JSON and model hashes rather than tensor payloads.
+- **Admission and replica roles remain distinct.** Routing and asset checks refuse the other role's work.
+- **Infrastructure faults stay distinguishable from model faults.** Store and end-to-end tests prevent an unavailable service from becoming a competitor rejection.
+- **Semantic changes change the evaluator digest.** Digest tests guard the identity used to detect admission/play skew.
+
+## Status
+
+**8 September 2026.** All six model calls and health routing are implemented, including SigV4
+storage and admission mirroring. `cargo test` passes the 48 local tests; the three S3 tests require
+an explicit live-store run and were not exercised against a store during this rewrite. Loading is
+synchronous, the resident loading list remains empty, and no GPU pool or cross-architecture counter
+conformance run is provided.
+
+## More
+
+- Local references: [wire types](src/api.rs), [configuration](src/config.rs), and [dialect tests](tests/dialect.rs).
+- Competitor documentation is maintained as a separate mdBook; a published guide URL is not configured in this checkout.
+- Related repositories: [Jodi](https://github.com/Tiny-Brains/jodi), [Kalam](https://github.com/Tiny-Brains/kalam), [Ants](https://github.com/Tiny-Brains/ants), [DevOps](https://github.com/Tiny-Brains/devops).
+- [LICENSE](LICENSE) contains Apache-2.0; Cargo.toml currently declares MIT, an unresolved metadata inconsistency.
