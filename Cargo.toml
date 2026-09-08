@@ -23,6 +23,10 @@ name = "axon"
 path = "src/main.rs"
 
 [dependencies]
+# HMAC-SHA256, for the SigV4 signing chain in src/store.rs. A reviewed implementation rather than
+# twenty lines of our own: this is the one place in the crate where getting the primitive subtly
+# wrong would be both silent and a security bug.
+hmac = "0.12"
 ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

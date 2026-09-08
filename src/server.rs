@@ -16,7 +16,7 @@ use crate::dialect::{self, Adapter, Fault};
 use crate::model::{Graph, GraphError};
 use crate::onnx_meta;
 use crate::residency::Residency;
-use crate::store::{self, DirStore, HttpStore, Kind, Store, StoreError};
+use crate::store::{self, DirStore, HttpStore, Kind, S3Store, Store, StoreError};
 
 /// Why a model could not be made resident, in the two-class split layer 03's barrier branches on
 /// (layer 04 §6): a `loader` fault releases the row with no attempt spent, a `model` fault fails
@@ -47,6 +47,15 @@ impl Axon {
         let store: Box<dyn Store> = match &cfg.store {
             StoreSpec::Dir(p) => Box::new(DirStore::new(p.clone())),
             StoreSpec::Http { base } => Box::new(HttpStore::new(base.clone())),
+            StoreSpec::S3 { endpoint, bucket, region, access_key, secret_key } => Box::new(
+                S3Store::new(
+                    endpoint.clone(),
+                    bucket.clone(),
+                    region.clone(),
+                    access_key.clone(),
+                    secret_key.clone(),
+                ),
+            ),
         };
         let residency = Mutex::new(Residency::new(cfg.memory_budget_bytes));
         Axon { cfg, store, residency }

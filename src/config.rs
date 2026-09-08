@@ -42,7 +42,7 @@ pub struct Config {
     pub threads: usize,
     pub adapter_threads: usize,
     pub max_in_flight: usize,
-    /// Where the bytes are. A directory, or an HTTP base URL. Layer 07 adds S3/R2.
+    /// Where the bytes are: a directory, an HTTP base URL, or S3/R2 signed with SigV4.
     pub store: StoreSpec,
     /// Empty on a replica, which is the property: only one instance can reach the internet.
     pub fetch_allow_hosts: Vec<String>,
@@ -52,6 +52,10 @@ pub struct Config {
 pub enum StoreSpec {
     Dir(PathBuf),
     Http { base: String },
+    /// Layer 07 §8.1. The only spec that works across hosts, and therefore the only one a fleet
+    /// can use: the admission instance and every replica must share one store, and there is no
+    /// shared volume between machines.
+    S3 { endpoint: String, bucket: String, region: String, access_key: String, secret_key: String },
 }
 
 fn env_or<T: std::str::FromStr>(key: &str, dflt: T) -> T {
@@ -64,10 +68,30 @@ impl Config {
         let mode = Mode::parse(&std::env::var("AXON_MODE").unwrap_or_else(|_| "replica".into()))
             .ok_or("AXON_MODE must be 'replica' or 'admission'")?;
 
-        let store = match (std::env::var("AXON_STORE_DIR"), std::env::var("AXON_STORE_URL")) {
-            (Ok(d), _) => StoreSpec::Dir(PathBuf::from(d)),
-            (_, Ok(u)) => StoreSpec::Http { base: u.trim_end_matches('/').to_string() },
-            _ => return Err("set AXON_STORE_DIR or AXON_STORE_URL".into()),
+        // S3 first: a deployment that names a bucket means it, and falling back to a directory
+        // because one variable was missing would give every replica its own empty store -- the
+        // exact split-store failure §8.1 exists to prevent, and silent.
+        let store = match (
+            std::env::var("AXON_STORE_S3_BUCKET"),
+            std::env::var("AXON_STORE_DIR"),
+            std::env::var("AXON_STORE_URL"),
+        ) {
+            (Ok(bucket), _, _) => {
+                let need = |k: &str| {
+                    std::env::var(k).map_err(|_| format!("{k} is required when AXON_STORE_S3_BUCKET is set"))
+                };
+                StoreSpec::S3 {
+                    endpoint: need("AXON_STORE_S3_ENDPOINT")?.trim_end_matches('/').to_string(),
+                    bucket,
+                    // R2 signs against "auto"; MinIO and AWS want a real region.
+                    region: std::env::var("AXON_STORE_S3_REGION").unwrap_or_else(|_| "auto".into()),
+                    access_key: need("AXON_STORE_S3_ACCESS_KEY")?,
+                    secret_key: need("AXON_STORE_S3_SECRET_KEY")?,
+                }
+            }
+            (_, Ok(d), _) => StoreSpec::Dir(PathBuf::from(d)),
+            (_, _, Ok(u)) => StoreSpec::Http { base: u.trim_end_matches('/').to_string() },
+            _ => return Err("set AXON_STORE_S3_BUCKET (with endpoint and keys), AXON_STORE_DIR, or AXON_STORE_URL".into()),
         };
 
         // The allowlist is empty on a replica whatever the environment says. A replica that could

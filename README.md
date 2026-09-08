@@ -16,7 +16,7 @@ cargo run                                              # the dialect version and
 
 ## What is built
 
-All six calls, against a real ONNX model. 42 tests.
+All six calls, against a real ONNX model. 51 tests.
 
 **Three additions on 8 September 2026, at layer 08 §13's asking**, each one a thing admission
 cannot do without: `/inspect` returns the adapter's exact bytes as text, because `models.adapter`
@@ -33,11 +33,20 @@ dialect specification.
 | `onnx_meta.rs` | the static facts `/inspect` reports, read straight out of the ONNX protobuf — no schema crate |
 | `model.rs` | the ONNX session, whether it batches, and one run under a deadline |
 | `residency.rs` | holds, LRU, the memory budget, the crash backstop |
-| `store.rs` | fetch by hash; a directory or an HTTP base. S3/R2 is layer 07's third implementation of the trait |
+| `store.rs` | fetch by hash. **Three implementations**: a directory, an HTTP base, and **S3/R2 signed with SigV4** — layer 07 §8.1, and the only one a fleet can use, since the admission instance and every replica must share one store and across hosts there is no shared volume |
 | `server.rs` | the six calls, blocking and threaded |
 
 ```
 AXON_MODE=replica AXON_STORE_DIR=/var/lib/axon AXON_BIND=127.0.0.1:9090 axon
+
+# Or on S3/R2, which is what a deployment uses. The bucket is checked FIRST, before
+# AXON_STORE_DIR: a deployment that names one means it, and falling back to a directory
+# because a variable was missing would give this replica its own empty store, silently.
+AXON_MODE=replica AXON_BIND=127.0.0.1:9090 \
+  AXON_STORE_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com \
+  AXON_STORE_S3_BUCKET=tinybrains-models \
+  AXON_STORE_S3_REGION=auto \
+  AXON_STORE_S3_ACCESS_KEY=... AXON_STORE_S3_SECRET_KEY=... axon
 cargo run --release --example dump-fixtures -- /tmp/store    # seed a store from the test fixtures
 ```
 
