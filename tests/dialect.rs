@@ -1,4 +1,4 @@
-//! The counting rules and the operators — layer 04 §4.3 and §4.4.
+//! The counting rules and the operators — docs/dialect.md §3 and §4.4.
 
 use axon::dialect::eval::{run, Fault};
 use axon::dialect::value::Value;
@@ -68,7 +68,7 @@ fn reshape_is_a_view_and_costs_one() {
 
 #[test]
 fn over_budget_aborts_immediately_rather_than_reporting_afterwards() {
-    // Rule 5, and layer 04 §13 item 4: a bound enforced after the work bounds the report, not the
+    // Rule 5, and docs/design.md §13 item 4: a bound enforced after the work bounds the report, not the
     // work. A tensor 40 million elements wide must be refused, not allocated.
     let start = std::time::Instant::now();
     let (r, ops) = go(json!({"tb.zeros": [[6000, 6000], "float32"]}), json!({}), 200_000);
@@ -96,7 +96,7 @@ fn over_budget_is_adapter_failed_and_a_bad_program_is_adapter_invalid() {
 
 #[test]
 fn the_count_does_not_depend_on_the_machine_or_the_run() {
-    // The one property layer 04 §10 says is required: integer arithmetic over a deterministic
+    // The one property docs/design.md §10 says is required: integer arithmetic over a deterministic
     // walk. Same program, same input, same count -- every time.
     let p = json!({"tb.stack": [[
         {"tb.scatter": [{"var": "pts"}, [32, 32], "int8"]},
@@ -108,7 +108,7 @@ fn the_count_does_not_depend_on_the_machine_or_the_run() {
 
 #[test]
 fn a_tensor_is_opaque_to_a_program() {
-    // Layer 04 §4.2. Shape and dtype, and nothing else.
+    // Layer docs/dialect.md §2. Shape and dtype, and nothing else.
     let (shape, _) = ok(json!({"var": "t.shape"}), json!({}));
     assert_eq!(shape, json!(null), "there is no tensor in the data to begin with");
 

@@ -1,6 +1,6 @@
 //! A resident model: the ONNX session, its static facts, and one batched run.
 //!
-//! Layer 04 §3.5, §3.6 and §10. A **model** on this seam is the pair `(weights_hash,
+//! docs/design.md §3.5, §3.6 and §10. A **model** on this seam is the pair `(weights_hash,
 //! adapter_hash)`; two pairs sharing a `weights_hash` share one session, which is why `/resident`
 //! answers weights hashes rather than pairs.
 
@@ -134,7 +134,7 @@ impl Graph {
         }
 
         // The deadline. ORT is told to stop rather than being waited on, so a slow graph is cut
-        // off and the other rows in the call are unaffected -- layer 04 §5.
+        // off and the other rows in the call are unaffected -- docs/design.md §5.
         let opts = ort::session::RunOptions::new().map_err(|e| e.to_string())?;
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {

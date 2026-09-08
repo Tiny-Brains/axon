@@ -1,11 +1,11 @@
 //! The reference Ants adapter, and what it costs.
 //!
-//! This is the P1 counter spike (`tracker.md` §4) and it answers **decision 6** — the number in
-//! `budgets.adapter_ops_max`, which `PROTOCOL.md` §4 carries provisionally at 200,000.
+//! This is the P1 counter spike (the tracker) and it answers **decision 6** — the number in
+//! `budgets.adapter_ops_max`, which ants/docs/protocol.md §4 carries provisionally at 200,000.
 //!
 //! The observation is real: `tests/fixtures/ants-observation.json` was dumped from the spike engine
 //! at turn 600 of a 128x128 match, when the known-water mask is at its most fragmented and the
-//! payload is at its largest (`design/v2/03-spike/FINDINGS.md` §3.4). 90 ants, 670 water runs,
+//! payload is at its largest (`the wave-turn spikeFINDINGS.md` §3.4). 90 ants, 670 water runs,
 //! 2,437 bytes.
 //!
 //! `cargo test --test ants_adapter -- --nocapture` prints the table.
@@ -70,7 +70,7 @@ fn reference_adapter() -> Vec<u8> {
     serde_json::to_vec(&program).unwrap()
 }
 
-/// A visibility-deriving adapter — `PROTOCOL.md` §8.3 names it as the concrete case the budget has
+/// A visibility-deriving adapter — ants/docs/protocol.md §8.3 names it as the concrete case the budget has
 /// to accommodate, because deriving the view mask from ant positions is the expensive thing a real
 /// adapter wants to do.
 ///
@@ -154,7 +154,7 @@ fn the_reference_adapter_runs_and_what_it_costs() {
     assert_eq!(
         action.as_array().unwrap().len(),
         n_ants,
-        "len(action) must equal len(mine) -- PROTOCOL.md §6"
+        "len(action) must equal len(mine) -- ants/docs/protocol.md §6"
     );
     assert!(action.as_array().unwrap().iter().all(|v| {
         matches!(v.as_str(), Some("N" | "E" | "S" | "W" | "-"))
@@ -165,7 +165,7 @@ fn the_reference_adapter_runs_and_what_it_costs() {
     println!("  in               {ops_in:>9} ops");
     println!("  out              {ops_out:>9} ops");
     println!("  the larger       {:>9} ops   <- what the budget must exceed", ops_in.max(ops_out));
-    println!("  provisional      {PROVISIONAL_BUDGET:>9} ops   (PROTOCOL.md §4)");
+    println!("  provisional      {PROVISIONAL_BUDGET:>9} ops   (ants/docs/protocol.md §4)");
     println!(
         "  headroom         {:>8.2}x",
         PROVISIONAL_BUDGET as f64 / ops_in.max(ops_out) as f64
@@ -189,12 +189,12 @@ fn deriving_visibility_costs_what_it_costs() {
     let vis2 = r2.expect("dilate failed");
     let marked2 = vis2[0].1.data.iter().filter(|&&v| v != 0.0).count();
 
-    println!("\n=== deriving visibility -- PROTOCOL.md §8.3's concrete case ===");
+    println!("\n=== deriving visibility -- ants/docs/protocol.md §8.3's concrete case ===");
     println!("  {n_ants} ants, a 317-cell disk, on a {} cell map", vis1[0].1.len());
     println!("  unrolled kernel   {ops1:>9} ops   {marked1} cells marked");
     println!("  tb.dilate         {ops2:>9} ops   {marked2} cells marked");
     println!("  the operator is   {:.0}x cheaper", ops1 as f64 / ops2 as f64);
-    println!("  provisional       {PROVISIONAL_BUDGET:>9} ops (PROTOCOL.md §4)");
+    println!("  provisional       {PROVISIONAL_BUDGET:>9} ops (ants/docs/protocol.md §4)");
 
     // Both must actually derive a fog mask -- the first version of this test compared a program
     // against a program that silently did nothing, and cost 256,518 operations to derive an empty
@@ -204,7 +204,7 @@ fn deriving_visibility_costs_what_it_costs() {
 
     // And they do NOT agree, which is the stronger half of the argument for the operator.
     //
-    // Ants maps wrap (PROTOCOL.md §1). `tb.dilate` wraps; the unrolled kernel produces
+    // Ants maps wrap (ants/docs/protocol.md §1). `tb.dilate` wraps; the unrolled kernel produces
     // out-of-range coordinates near the edges and `tb.scatter` drops them, so a competitor's fog
     // mask is quietly wrong along every border. They cannot fix it: the modulo needs the map's
     // size, the map's size is not reachable inside the iteration that has the ant, and the

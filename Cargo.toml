@@ -5,14 +5,14 @@
 # for a whole wave. A second instance of the same binary stands beside Soma and is the platform's
 # only data path for admission.
 #
-# The specification is design/v2/04-model-loader.md in the tinybrains design repo. Where this crate
+# The specification is docs/design.md in the tinybrains design repo. Where this crate
 # and that document disagree, the document is right and this is a bug.
 [package]
 name = "axon"
 version = "0.1.0"
 edition = "2021"
 publish = false
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 name = "axon"

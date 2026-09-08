@@ -1,4 +1,4 @@
-//! S3Store against a real S3 implementation — layer 07 §8.1.
+//! S3Store against a real S3 implementation — devops/docs/deployment.md §8.1.
 //!
 //! Signing is checked against an independent implementation in the unit tests; what those cannot
 //! check is whether a real server ACCEPTS the signature, which is a different question and the one

@@ -1,9 +1,10 @@
-//! The tensor operators — layer 04 §4.3, dialect 1. Nineteen, plus four metadata helpers.
+//! The tensor operators — dialect 1. Twenty-one, plus four metadata helpers: 25 in all.
+//! See `docs/dialect.md` §3; `TENSOR_OPS` below is the normative list.
 //!
 //! Every one costs `1 + max(elements read, elements produced)`: the node's own 1 is charged by the
 //! evaluator, and each operator charges the rest here. The charge happens **before** the work, so
 //! an operator that would produce a hundred million elements is refused rather than run and then
-//! reported — layer 04 §13 item 4.
+//! reported — see `docs/design.md` §13.
 //!
 //! **There is no arithmetic here beyond `cast` and `normalise`**, and that is the most important
 //! property in the file. Computation belongs in the graph, where the FLOP cap prices it; an

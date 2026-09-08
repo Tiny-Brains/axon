@@ -1,4 +1,4 @@
-//! The wire shapes — layer 04 §3. Serde types only; the behaviour is `server.rs`.
+//! The wire shapes — docs/design.md §3. Serde types only; the behaviour is `server.rs`.
 
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ pub struct ModelRef {
     pub weights_hash: String,
     pub adapter_hash: String,
     /// Accepted **only** by the admission instance. A replica answers `URL_NOT_ACCEPTED`, so a
-    /// replica cannot be told where to fetch from — layer 04 §7.
+    /// replica cannot be told where to fetch from — docs/design.md §7.
     pub weights_url: Option<String>,
     pub adapter_url: Option<String>,
 }
@@ -36,7 +36,7 @@ pub struct ModelState {
     pub state: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<&'static str>,
-    /// `model` | `loader`. **The whole of what layer 03's barrier needs**: it branches on this
+    /// `model` | `loader`. **The whole of what kalam/docs/design.md's barrier needs**: it branches on this
     /// field rather than on the reason word, so a reason added later costs no workflow change.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fault: Option<&'static str>,
@@ -69,7 +69,7 @@ pub struct PlayRow {
     pub adapter_hash: String,
     pub observation: serde_json::Value,
     /// Echoed verbatim and never interpreted. Without it Kalam cannot count strikes at all —
-    /// layer 04 §3.2.
+    /// docs/design.md §3.2.
     #[serde(default)]
     pub r#ref: Option<serde_json::Value>,
 }
@@ -137,8 +137,8 @@ pub struct InspectReply {
     pub opset: i64,
     pub ops: Vec<String>,
     pub unsupported_ops: Vec<String>,
-    /// `S` — `DESIGN.md` §5, both terms. Reported, not classified: the class table is platform
-    /// policy and lives in layer 08, so a threshold change is not a redeploy of this binary.
+    /// `S` — the platform design §5, both terms. Reported, not classified: the class table is platform
+    /// policy and lives in jodi/docs/admission.md, so a threshold change is not a redeploy of this binary.
     pub size_metric_bytes: usize,
     pub weights_zstd_bytes: usize,
     pub adapter_zstd_bytes: usize,
@@ -147,7 +147,7 @@ pub struct InspectReply {
     pub inputs: Vec<crate::model::Port>,
     pub outputs: Vec<crate::model::Port>,
     /// **The adapter's exact bytes as text** — the ones that hashed to `adapter_hash`, never a
-    /// re-serialisation. Layer 08 §13's first ask: `models.adapter` stores the release asset's
+    /// re-serialisation. jodi/docs/admission.md §13's first ask: `models.adapter` stores the release asset's
     /// text with a `CHECK` that recomputes the hash over it, and this process is the only one
     /// that holds those bytes. A re-serialised document hashes differently and the `CHECK`
     /// refuses the row — the good failure mode, but not one to discover in production.
@@ -185,7 +185,7 @@ pub struct ValidateReply {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failing_case: Option<usize>,
     /// Set when `ok` is false, and it is the difference between "too expensive" and "wrong" —
-    /// layer 08 §13's third ask. Collapsing the two would tell a competitor whose adapter merely
+    /// jodi/docs/admission.md §13's third ask. Collapsing the two would tell a competitor whose adapter merely
     /// costs too much to go and re-read the dialect specification.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub over_budget: Option<bool>,

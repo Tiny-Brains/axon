@@ -1,6 +1,6 @@
 //! The evaluator, and the operation count.
 //!
-//! Layer 04 §4.4, stated exactly enough that this file is a transcription of it:
+//! Layer docs/dialect.md §4, stated exactly enough that this file is a transcription of it:
 //!
 //!   1. every node **evaluated** costs 1 — applied, not written
 //!   2. every tensor operator costs `1 + max(elements read, elements produced)`
@@ -17,7 +17,7 @@
 //! `reduce`'s initial accumulator is the exception, evaluated in the *outer* scope, which makes it
 //! the one channel by which an outer value reaches a body. That asymmetry is not this dialect's
 //! invention; it is what the platform's own workflows rely on
-//! (`design/v2/03-spike/FINDINGS.md` §2.6), and an adapter behaving differently from a workflow
+//! (`the wave-turn spikeFINDINGS.md` §2.6), and an adapter behaving differently from a workflow
 //! over the same expression would be worse than the asymmetry.
 
 use std::sync::Arc;
@@ -123,7 +123,7 @@ fn eval_inner(node: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<Valu
         other => return Ok(Value::from_json(other)),
     };
 
-    // **The object rule** — layer 04 §4.1. An object whose single key is a known operator is an
+    // **The object rule** — docs/dialect.md §1. An object whose single key is a known operator is an
     // operation; any other object is a literal whose values are evaluated and whose keys are not.
     // JSONLogic has no object constructor and both programs must produce one, so the rule that
     // most implementations leave to inference is stated here and tested.
@@ -169,7 +169,7 @@ pub fn is_operator(name: &str) -> bool {
 
 /// The core operator set. It is a **list**, not "whatever JSONLogic has", because the dialect's
 /// surface is what `dialect_version` versions and what the re-validation sweep is defined against
-/// (layer 04 §4.5).
+/// (docs/dialect.md §5).
 pub const CORE: &[&str] = &[
     "var", "val", "missing", "missing_some", "if", "?:", "==", "===", "!=", "!==", "!", "!!",
     "and", "or", ">", ">=", "<", "<=", "+", "-", "*", "/", "%", "max", "min", "cat", "substr",

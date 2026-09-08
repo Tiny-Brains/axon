@@ -162,6 +162,7 @@ conformance run is provided.
 ## More
 
 - Local references: [wire types](src/api.rs), [configuration](src/config.rs), and [dialect tests](tests/dialect.rs).
-- Competitor documentation is maintained as a separate mdBook; a published guide URL is not configured in this checkout.
+- Design docs: [`docs/design.md`](docs/design.md) (the six calls, the turn clock, residency) and [`docs/dialect.md`](docs/dialect.md) (the adapter dialect — the normative reference).
+- [The competitor guide](https://github.com/Tiny-Brains/docs) — the reader-facing half: the rules, the model format, the adapter dialect, submitting, ranking and seasons. The platform section is the high-level design for someone new to the codebase.
 - Related repositories: [Jodi](https://github.com/Tiny-Brains/jodi), [Kalam](https://github.com/Tiny-Brains/kalam), [Ants](https://github.com/Tiny-Brains/ants), [DevOps](https://github.com/Tiny-Brains/devops).
-- [LICENSE](LICENSE) contains Apache-2.0; Cargo.toml currently declares MIT, an unresolved metadata inconsistency.
+- Apache-2.0: see [LICENSE](LICENSE).

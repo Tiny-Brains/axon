@@ -1,4 +1,4 @@
-//! The seam — layer 04 §3. Six calls, JSON in, JSON out, on loopback.
+//! The seam — docs/design.md §3. Six calls, JSON in, JSON out, on loopback.
 //!
 //! Blocking and threaded rather than async, on purpose: inference and adapter evaluation are
 //! CPU-bound, ORT is blocking, and a replica's loader serves one caller. An async runtime would
@@ -18,8 +18,8 @@ use crate::onnx_meta;
 use crate::residency::Residency;
 use crate::store::{self, DirStore, HttpStore, Kind, S3Store, Store, StoreError};
 
-/// Why a model could not be made resident, in the two-class split layer 03's barrier branches on
-/// (layer 04 §6): a `loader` fault releases the row with no attempt spent, a `model` fault fails
+/// Why a model could not be made resident, in the two-class split kalam/docs/design.md's barrier branches on
+/// (docs/design.md §6): a `loader` fault releases the row with no attempt spent, a `model` fault fails
 /// it at once with the seat.
 struct Refusal {
     reason: &'static str,
@@ -194,7 +194,7 @@ impl Axon {
                             .map(|_| buf)
                             .map_err(|e| e.to_string())
                     }
-                    // A 4xx is the RELEASE's fault, not the platform's -- layer 08 §13's second
+                    // A 4xx is the RELEASE's fault, not the platform's -- jodi/docs/admission.md §13's second
                     // ask. Classing it with the 5xxs would give a competitor who forgot to attach
                     // `adapter.json` three silent retries and then TIMED_OUT, which is the least
                     // actionable message on the platform. Anything else -- a 5xx, a timeout, a
@@ -390,7 +390,7 @@ impl Axon {
         ResidentReply {
             weights: r.resident_weights(),
             // Nothing loads in the background yet: `/load` is synchronous, so a model is resident
-            // when it answers or it was refused. The field is here because layer 03 excludes it
+            // when it answers or it was refused. The field is here because kalam/docs/design.md excludes it
             // from what it hands the claim, and that must keep working when it is populated.
             loading: Vec::new(),
             adapters: r.resident_adapters(),
@@ -422,7 +422,8 @@ impl Axon {
             params: graph.facts.params,
             opset: graph.facts.opset,
             ops: graph.facts.ops.iter().cloned().collect(),
-            // Reported, not judged. The allowlist is platform policy and lives in layer 08.
+            // Reported, not judged. The allowlist is platform policy and lives in admission
+            // (jodi/docs/admission.md).
             unsupported_ops: Vec::new(),
             size_metric_bytes: s,
             weights_zstd_bytes: w,
@@ -431,7 +432,7 @@ impl Axon {
             adapter_raw_bytes: adapter_bytes.len() as u64,
             inputs: graph.inputs.clone(),
             outputs: graph.outputs.clone(),
-            // The bytes as fetched, not a re-serialisation -- layer 08 §13. They parsed as JSON
+            // The bytes as fetched, not a re-serialisation -- jodi/docs/admission.md §13. They parsed as JSON
             // in `/load`, so they are valid UTF-8 and this cannot lose anything; the error arm is
             // unreachable rather than lossy, and says so.
             adapter: String::from_utf8(adapter_bytes.clone()).map_err(|_| ErrorReply {
@@ -662,7 +663,7 @@ fn describe(v: &serde_json::Value) -> String {
 /// A multiply-accumulate count for the operators that dominate, at the shapes actually fed.
 ///
 /// It is an estimate and says so. The cap it feeds is an *eligibility gate* against "a very large,
-/// very sparse network compresses beautifully and costs a fortune to run" (`DESIGN.md` §5), and
+/// very sparse network compresses beautifully and costs a fortune to run" (the platform design §5), and
 /// for that a number within a small factor is enough. What it must not do is depend on a declared
 /// shape, and it does not: it scales the graph's convolution count by the fed spatial size.
 fn estimate_flops(graph: &Graph, feeds: &[(Arc<str>, Arc<crate::dialect::Tensor>)]) -> f64 {

@@ -1,4 +1,4 @@
-//! Where the bytes are — layer 04 §7.
+//! Where the bytes are — docs/design.md §7.
 //!
 //! ```text
 //! weights/sha256/<hex>     the ONNX file, exactly the bytes admitted
@@ -12,7 +12,7 @@
 //! blob connector stays at `presign_get: false`.
 //!
 //! Three implementations. A directory, which is what the tests use; an HTTP base, which covers a
-//! presigning proxy or a public bucket; and **S3/R2 with SigV4** — layer 07 §8.1, and a third
+//! presigning proxy or a public bucket; and **S3/R2 with SigV4** — devops/docs/deployment.md §8.1, and a third
 //! implementation of this trait rather than a change to anything above it.
 //!
 //! **The S3 one is what makes a fleet possible at all**, which is worth saying because it reads
@@ -165,7 +165,7 @@ impl Store for HttpStore {
 
 // ----------------------------------------------------------------------------- S3 / R2, SigV4
 
-/// The bytes in an S3-compatible bucket, signed with SigV4 — layer 07 §8.1.
+/// The bytes in an S3-compatible bucket, signed with SigV4 — devops/docs/deployment.md §8.1.
 ///
 /// **Path style, always**: `{endpoint}/{bucket}/{key}`. Virtual-host style would put the bucket in
 /// the hostname, which R2 supports and MinIO does not without configuration, and the key here is a

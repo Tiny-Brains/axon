@@ -6,7 +6,7 @@ shape a competitor would actually submit, so `/inspect` reports real operators a
 counts, `/validate` measures real FLOPs at the shapes the adapter produced, and `/play` runs a real
 batched inference. A hand-written two-node graph would let every one of those be wrong.
 
-The architecture is the one `DESIGN.md` §5 sanity-checks: a small fully-convolutional trunk over
+The architecture is the one the platform design §5 sanity-checks: a small fully-convolutional trunk over
 the board, gathered at the ants' positions to a per-ant policy over five moves. It takes the three
 inputs the reference adapter produces (`board`, `ant_r`, `ant_c`) and answers the one it consumes
 (`policy`, [N, 5]).
@@ -48,7 +48,7 @@ class AntsDense(nn.Module):
     inference for the wave.
 
     The per-unit gather moves out of the graph and into the adapter's `out` program, which is why
-    `out` is handed the observation alongside the outputs (layer 04 §3.2): the ant positions are in
+    `out` is handed the observation alongside the outputs (docs/design.md §3.2): the ant positions are in
     the observation, and without them the dense answer cannot be turned into moves.
 
     `Ants` above cannot batch, and nothing is wrong with it: its `ant_r`/`ant_c` are ragged across

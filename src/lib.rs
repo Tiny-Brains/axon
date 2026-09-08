@@ -1,6 +1,6 @@
 //! Axon — the Model Loader.
 //!
-//! Specified by `design/v2/04-model-loader.md`. Built in the order the risk is in: the dialect
+//! Specified by docs/design.md. Built in the order the risk is in: the dialect
 //! first, because it carries the competitor-facing budget and is the part no other system has;
 //! then the seam; then the runtime.
 

@@ -1,4 +1,4 @@
-//! `dialect_version` and `evaluator_digest` — layer 04 §4.5.
+//! `dialect_version` and `evaluator_digest` — docs/dialect.md §5.
 //!
 //! The digest is `sha256` over the **canonical description of the dialect**: the version, the core
 //! operator list, the tensor operator table with each signature, and the counting rules. It is
@@ -6,7 +6,7 @@
 //! dependency bump, a performance fix, a new endpoint — reports the same digest, so finding 5's
 //! re-validation sweep fires on a change to what an adapter *means* and not on a release.
 //!
-//! Layer 01 records `models.evaluator_digest` on every admitted version; layer 08 sweeps when the
+//! soma/docs/schema.md records `models.evaluator_digest` on every admitted version; jodi/docs/admission.md sweeps when the
 //! dialect version changes.
 
 use sha2::{Digest, Sha256};

@@ -115,7 +115,7 @@ fn the_one_deliberate_divergence() {
     // `{"==": [0, null]}`. JavaScript says false. The JSONLogic specification follows JavaScript.
     // datalogic-rs says true, and that is what made a workflow join in the wave-turn spike select
     // the falsy elements and look correct for as long as the value it compared against was zero
-    // (design/v2/03-spike/FINDINGS.md §2.6).
+    // (the wave-turn spikeFINDINGS.md §2.6).
     //
     // An adapter is the worst place to rediscover that, so this dialect follows the specification.
     // If this test ever fails because datalogic-rs changed, the divergence is gone and the note in

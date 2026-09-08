@@ -1,4 +1,4 @@
-//! Layer 04 §11: one block, and nothing that names a host, a budget or a secret is in code.
+//! docs/design.md §11: one block, and nothing that names a host, a budget or a secret is in code.
 //!
 //! `budget_ops` and `deadline_ms` are deliberately absent. They are the *game's*, they arrive on
 //! every call, and putting them here would put a game's rules in a game-agnostic process.
@@ -52,7 +52,7 @@ pub struct Config {
 pub enum StoreSpec {
     Dir(PathBuf),
     Http { base: String },
-    /// Layer 07 §8.1. The only spec that works across hosts, and therefore the only one a fleet
+    /// devops/docs/deployment.md §8.1. The only spec that works across hosts, and therefore the only one a fleet
     /// can use: the admission instance and every replica must share one store, and there is no
     /// shared volume between machines.
     S3 { endpoint: String, bucket: String, region: String, access_key: String, secret_key: String },
@@ -63,7 +63,7 @@ fn env_or<T: std::str::FromStr>(key: &str, dflt: T) -> T {
 }
 
 impl Config {
-    /// From the environment, with layer 04 §11's provisional values as defaults.
+    /// From the environment, with docs/design.md §11's provisional values as defaults.
     pub fn from_env() -> Result<Config, String> {
         let mode = Mode::parse(&std::env::var("AXON_MODE").unwrap_or_else(|_| "replica".into()))
             .ok_or("AXON_MODE must be 'replica' or 'admission'")?;

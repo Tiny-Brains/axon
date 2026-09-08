@@ -26,7 +26,7 @@ pub struct GraphFacts {
     pub opset: i64,
     pub ops: BTreeSet<String>,
     pub params: u64,
-    /// The concatenated initializer payloads — `DESIGN.md` §5's "model initializer tensor data",
+    /// The concatenated initializer payloads — the platform design §5's "model initializer tensor data",
     /// which is the thing the size metric compresses. Weights, not the file.
     pub initializer_bytes: Vec<u8>,
 }
@@ -214,7 +214,7 @@ fn read_initializer(t: &[u8], f: &mut GraphFacts) {
     f.params = f.params.saturating_add(if any_dim { count } else { 1 });
 }
 
-/// `DESIGN.md` §5's size metric, both terms:
+/// the platform design §5's size metric, both terms:
 /// `S = len(zstd-19(initializer data)) + len(zstd-19(adapter))`.
 pub fn size_metric(initializer_bytes: &[u8], adapter: &[u8]) -> (usize, usize, usize) {
     let w = zstd::encode_all(initializer_bytes, 19).map(|v| v.len()).unwrap_or(0);

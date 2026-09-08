@@ -1,9 +1,9 @@
 //! A real ONNX model, a real adapter, a real observation, through the real seam.
 //!
-//! Everything before this tested a piece. This tests that layer 04 §3 is a thing that works:
+//! Everything before this tested a piece. This tests that docs/design.md §3 is a thing that works:
 //! `/load` fetches by hash and verifies, `/play` runs adapter → graph → adapter under a deadline,
 //! `/resident` answers what the claim's affinity ordering needs, `/unload` is idempotent, and both
-//! classes of refusal come back with the `fault` field layer 03 branches on.
+//! classes of refusal come back with the `fault` field kalam/docs/design.md branches on.
 
 mod common;
 
@@ -28,7 +28,7 @@ fn a_wave_loads_plays_and_unloads() {
     assert_eq!(r.dialect_version, 1);
     assert!(r.evaluator_digest.starts_with("sha256:"));
 
-    // ---- /resident: what layer 01 §4.2's claim orders its candidates by
+    // ---- /resident: what soma/docs/schema.md §4.2's claim orders its candidates by
     let res = axon.resident();
     assert_eq!(res.weights, vec![f.weights_hash.clone()]);
     assert_eq!(res.adapters, vec![f.adapter_hash.clone()]);
@@ -181,7 +181,7 @@ fn admission_inspects_and_validates_and_does_not_play() {
     assert!(ins.ops.contains(&"Conv".to_string()));
     assert!(ins.size_metric_bytes > 0);
     assert_eq!(ins.weights_zstd_bytes + ins.adapter_zstd_bytes, ins.size_metric_bytes);
-    // Micro is <= 64 KiB compressed -- DESIGN.md §5. The class table is layer 08's to apply.
+    // Micro is <= 64 KiB compressed -- the platform design §5. The class table is jodi/docs/admission.md's to apply.
     assert!(ins.size_metric_bytes < 64 * 1024, "S = {}", ins.size_metric_bytes);
     let names: Vec<&str> = ins.inputs.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, vec!["board", "ant_r", "ant_c"]);
@@ -237,7 +237,7 @@ fn validate_refuses_an_adapter_that_does_not_feed_the_graph() {
 
 #[test]
 fn validate_with_no_reference_observations_is_refused_rather_than_passing_vacuously() {
-    // The requirement layer 04 §3.6 places on layer 08: a gate that tests nothing is not a gate.
+    // The requirement docs/design.md §3.6 places on jodi/docs/admission.md: a gate that tests nothing is not a gate.
     let f = Fixture::new("noobs");
     let axon = Axon::new(f.config(Mode::Admission));
     axon.load(load_req(vec![f.model_ref()]));
@@ -249,7 +249,7 @@ fn validate_with_no_reference_observations_is_refused_rather_than_passing_vacuou
 
 #[test]
 fn the_batchable_model_answers_the_same_moves_one_inference_at_a_time() {
-    // `DESIGN.md` §7: "one batched inference per distinct model" is "the economics a code-
+    // the platform design §7: "one batched inference per distinct model" is "the economics a code-
     // submission challenge can never have". This is that claim, tested.
     //
     // Two models, the same trunk and the same weights. `ants-micro` takes ragged per-ant inputs
@@ -343,7 +343,7 @@ fn a_batch_gives_each_row_its_own_answer() {
     assert!(alone[0] != alone[1], "the fixture must actually differ between rows");
 }
 
-// ---------------------------------------------------------------- what layer 08 asked for
+// ---------------------------------------------------------------- what jodi/docs/admission.md asked for
 //
 // Three additions, each one a thing admission cannot do without. They are tested here rather than
 // beside the calls they belong to because each is only meaningful in the admission role.
@@ -392,7 +392,7 @@ fn a_missing_release_asset_is_the_models_fault_and_is_named() {
         "adapter_url": format!("http://{addr}/adapter.json")})]);
     let r = axon.load(req);
 
-    // Before layer 08 asked, this was FETCH_FAILED with fault `loader` -- which admission retries.
+    // Before jodi/docs/admission.md asked, this was FETCH_FAILED with fault `loader` -- which admission retries.
     // A competitor who forgot to attach the file would have got three silent retries and then
     // TIMED_OUT, the least actionable message on the platform.
     assert_eq!(r.models[0].state, "refused");

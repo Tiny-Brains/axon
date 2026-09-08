@@ -3,7 +3,7 @@
 # Axon — the Model Loader. The one process in TinyBrains that is not Orion, so unlike soma/ and
 # kalam/ this image has application code in it and is built rather than assembled.
 #
-# ONE BINARY, TWO ROLES (layer 04 §8). `AXON_MODE=replica` stands beside a Kalam replica, fetches
+# ONE BINARY, TWO ROLES (docs/design.md §8). `AXON_MODE=replica` stands beside a Kalam replica, fetches
 # by hash and serves /play; `AXON_MODE=admission` stands beside Soma, accepts URLs, mirrors what it
 # verified, and serves /inspect and /validate while refusing /play. The difference is configuration
 # because the trust boundary is: a replica's fetch allowlist is empty *whatever the environment
@@ -43,7 +43,7 @@ RUN apt-get update \
 
 COPY --from=build /usr/local/bin/axon /usr/local/bin/axon
 
-# The store. A directory here; layer 07 replaces it with S3/R2 through the same trait, at which
+# The store. A directory here; devops/docs/deployment.md replaces it with S3/R2 through the same trait, at which
 # point this volume is a cache rather than the record.
 RUN mkdir -p /var/lib/axon && chown axon:axon /var/lib/axon
 VOLUME /var/lib/axon
@@ -53,7 +53,7 @@ ENV AXON_BIND=0.0.0.0:9090 \
     AXON_STORE_DIR=/var/lib/axon
 EXPOSE 9090
 
-# /healthz reports the mode, the dialect version and the evaluator digest — layer 04 §3.7. Kalam's
+# /healthz reports the mode, the dialect version and the evaluator digest — docs/design.md §3.7. Kalam's
 # entrypoint waits on this exact endpoint before it will load its package, because a replica with
 # no loader claims matches it cannot play and each one costs a lease and two lapses.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \

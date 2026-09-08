@@ -1,4 +1,4 @@
-//! Axon — the Model Loader. `design/v2/04-model-loader.md`.
+//! Axon — the Model Loader. docs/design.md.
 
 use std::sync::Arc;
 

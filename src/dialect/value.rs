@@ -4,7 +4,7 @@
 //! coming out — with exactly one addition: a **tensor**, which is opaque. A program can produce
 //! one, pass it to another operator, and ask its shape or its dtype. It cannot see an element.
 //!
-//! That is layer 04 §4.2, and it is why this file exists rather than `serde_json::Value` being
+//! That is docs/dialect.md §2, and it is why this file exists rather than `serde_json::Value` being
 //! used directly: a tensor has to be able to live inside an array (`tb.stack` takes a list of
 //! them) and inside an object (an `in` program's result is `{input_name: tensor}`), and
 //! `serde_json::Value` has no room for one.
@@ -221,7 +221,7 @@ impl Value {
             Value::Null => serde_json::Value::Null,
             Value::Bool(b) => serde_json::Value::Bool(*b),
             // An integral value renders as a JSON integer, not `3.0`. This is not cosmetic: the
-            // action is canonically serialized for the determinism audit (PROTOCOL.md §3 rule 2)
+            // action is canonically serialized for the determinism audit (ants/docs/protocol.md §3 rule 2)
             // and RFC 8785 renders an integral number without a fraction, so emitting `20.0` where
             // a game expects `20` is a different document with a different hash. Caught by the
             // differential test, which is exactly the kind of thing it is for.

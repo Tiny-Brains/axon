@@ -1,7 +1,7 @@
 //! The one thing in the dialect that is not JSON, and it is opaque.
 //!
 //! A tensor is produced by an operator, consumed by an operator, and handed to the graph. A
-//! program can ask its shape and its dtype and nothing else — layer 04 §4.2. Two things follow:
+//! program can ask its shape and its dtype and nothing else — docs/dialect.md §2. Two things follow:
 //! the operation count is exact arithmetic rather than instrumentation of a general interpreter
 //! walking a 131,072-element array, and a 128x128 plane never enters the value model at all.
 

@@ -1,4 +1,4 @@
-//! Residency and holds — layer 04 §6.
+//! Residency and holds — docs/design.md §6.
 //!
 //! ```text
 //! /load      hold += 1              refused if it cannot fit and nothing is evictable
@@ -64,8 +64,8 @@ impl Residency {
         self.weights.contains_key(weights_hash) && self.adapters.contains_key(adapter_hash)
     }
 
-    /// Advisory, and allowed to be stale — layer 04 §3.4. What `/resident` answers, and what
-    /// layer 01 §4.2's claim orders its candidates by.
+    /// Advisory, and allowed to be stale — docs/design.md §3.4. What `/resident` answers, and what
+    /// soma/docs/schema.md §4.2's claim orders its candidates by.
     pub fn resident_weights(&self) -> Vec<String> {
         let mut v: Vec<String> = self.weights.keys().cloned().collect();
         v.sort();

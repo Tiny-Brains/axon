@@ -1,4 +1,4 @@
-//! The adapter dialect — layer 04 §4.
+//! The adapter dialect — docs/design.md §4.
 //!
 //! A competitor's `adapter.json` is two programs:
 //!
@@ -10,11 +10,11 @@
 //!
 //! # Why this is not built on `datalogic-rs`
 //!
-//! Layer 04 said "wrap or fork `datalogic-rs`", which is the engine Orion evaluates workflow logic
+//! docs/design.md said "wrap or fork `datalogic-rs`", which is the engine Orion evaluates workflow logic
 //! with. Neither turned out to be right, and the reasoning is worth keeping because the obvious
 //! objection — two JSONLogic engines on one platform — is a real cost that has to be paid for.
 //!
-//! **Wrapping does not work.** The count in layer 04 §4.4 is "every node evaluated costs 1", and
+//! **Wrapping does not work.** The count in docs/dialect.md §4 is "every node evaluated costs 1", and
 //! `datalogic-rs` 5.4 exposes no evaluation hook, no step budget and no fuel. Its `CustomOperator`
 //! trait covers the `tb.*` operators and nothing else: the core operators — `map`, `if`, `+` — are
 //! where an adapter actually spends, and they are unreachable. Its trace API records every step,
@@ -26,16 +26,16 @@
 //! the internals of a crate whose own documentation says they may evolve, and every 5.x upgrade
 //! becomes a re-patch of an evaluation loop that no test of ours covers.
 //!
-//! **And the dialect is not JSONLogic anyway.** It is a fixed subset plus 19 tensor operators over
+//! **And the dialect is not JSONLogic anyway.** It is a fixed subset plus 25 tensor operators over
 //! an opaque value JSON does not have, with no arithmetic on tensors (§4.6) and an operator table
-//! that `evaluator_digest` hashes. Owning it means layer 04 §4.3 and §4.4 *are* the implementation
+//! that `evaluator_digest` hashes. Owning it means docs/dialect.md §3 and §4.4 *are* the implementation
 //! rather than a description of one.
 //!
 //! The cost of that choice is paid in `tests/differential.rs`: the core subset is run through both
 //! engines on every case, and they must agree except where this dialect diverges **on purpose**,
 //! which is one place — `{"==": [0, null]}`. `datalogic-rs` answers true; JavaScript, the
 //! JSONLogic specification and this dialect answer false. The spike found that quirk the hard way
-//! (`design/v2/03-spike/FINDINGS.md` §2.6): a join written against a path that does not resolve
+//! (`the wave-turn spikeFINDINGS.md` §2.6): a join written against a path that does not resolve
 //! silently selects the falsy elements and looks correct for exactly as long as the value it is
 //! compared against is zero. An adapter is the worst possible place to rediscover that.
 
@@ -60,7 +60,7 @@ pub type Ports = Vec<(Arc<str>, Arc<Tensor>)>;
 pub type Counted<T> = (Result<T, Fault>, u64);
 
 /// A compiled adapter: the two programs, plus the exact bytes they were parsed from, so the row's
-/// copy stays self-verifying (layer 01 §3.2).
+/// copy stays self-verifying (soma/docs/schema.md §3.2).
 #[derive(Debug)]
 pub struct Adapter {
     pub dialect: u32,
