@@ -146,6 +146,12 @@ pub struct InspectReply {
     pub adapter_raw_bytes: u64,
     pub inputs: Vec<crate::model::Port>,
     pub outputs: Vec<crate::model::Port>,
+    /// **The adapter's exact bytes as text** — the ones that hashed to `adapter_hash`, never a
+    /// re-serialisation. Layer 08 §13's first ask: `models.adapter` stores the release asset's
+    /// text with a `CHECK` that recomputes the hash over it, and this process is the only one
+    /// that holds those bytes. A re-serialised document hashes differently and the `CHECK`
+    /// refuses the row — the good failure mode, but not one to discover in production.
+    pub adapter: String,
     pub evaluator_digest: String,
     pub dialect_version: u32,
 }
@@ -178,6 +184,11 @@ pub struct ValidateReply {
     pub detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failing_case: Option<usize>,
+    /// Set when `ok` is false, and it is the difference between "too expensive" and "wrong" —
+    /// layer 08 §13's third ask. Collapsing the two would tell a competitor whose adapter merely
+    /// costs too much to go and re-read the dialect specification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub over_budget: Option<bool>,
     pub cases: Vec<ValidateCase>,
     pub ops_max: u64,
     pub flops_max: f64,

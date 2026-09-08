@@ -185,6 +185,17 @@ impl Axon {
                             .map(|_| buf)
                             .map_err(|e| e.to_string())
                     }
+                    // A 4xx is the RELEASE's fault, not the platform's -- layer 08 §13's second
+                    // ask. Classing it with the 5xxs would give a competitor who forgot to attach
+                    // `adapter.json` three silent retries and then TIMED_OUT, which is the least
+                    // actionable message on the platform. Anything else -- a 5xx, a timeout, a
+                    // connection failure -- stays FETCH_FAILED and stays ours.
+                    Err(ureq::Error::StatusCode(code)) if (400..500).contains(&code) => {
+                        return Err(Refusal::model(
+                            "ASSET_MISSING",
+                            format!("{u} answered {code}"),
+                        ))
+                    }
                     Err(e) => Err(e.to_string()),
                 }
             }
@@ -411,6 +422,13 @@ impl Axon {
             adapter_raw_bytes: adapter_bytes.len() as u64,
             inputs: graph.inputs.clone(),
             outputs: graph.outputs.clone(),
+            // The bytes as fetched, not a re-serialisation -- layer 08 §13. They parsed as JSON
+            // in `/load`, so they are valid UTF-8 and this cannot lose anything; the error arm is
+            // unreachable rather than lossy, and says so.
+            adapter: String::from_utf8(adapter_bytes.clone()).map_err(|_| ErrorReply {
+                error: "ADAPTER_INVALID",
+                detail: Some("the adapter is not valid UTF-8".into()),
+            })?,
             evaluator_digest: dialect::evaluator_digest(),
             dialect_version: dialect::DIALECT_VERSION,
         })
@@ -422,6 +440,7 @@ impl Axon {
             reason: None,
             detail: None,
             failing_case: None,
+            over_budget: None,
             cases: Vec::new(),
             ops_max: 0,
             flops_max: 0.0,
@@ -433,6 +452,7 @@ impl Axon {
             r.reason = Some(reason);
             r.detail = Some(detail);
             r.failing_case = case;
+            r.over_budget = Some(reason == "ADAPTER_FAILED");
             r
         };
 

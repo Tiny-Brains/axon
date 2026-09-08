@@ -16,7 +16,16 @@ cargo run                                              # the dialect version and
 
 ## What is built
 
-All six calls, against a real ONNX model. 39 tests.
+All six calls, against a real ONNX model. 42 tests.
+
+**Three additions on 8 September 2026, at layer 08 §13's asking**, each one a thing admission
+cannot do without: `/inspect` returns the adapter's exact bytes as text, because `models.adapter`
+stores them under a `CHECK` that recomputes the hash and only this process holds them; a release URL
+answering `4xx` is now `ASSET_MISSING` with `fault: model` rather than a retryable `FETCH_FAILED`,
+so a competitor who forgot to attach `adapter.json` is told so instead of being retried three times
+and timed out; and `/validate` sets `over_budget`, which is what lets admission say
+`ADAPTER_OVER_BUDGET` rather than sending someone whose adapter is merely expensive back to the
+dialect specification.
 
 | | |
 |---|---|

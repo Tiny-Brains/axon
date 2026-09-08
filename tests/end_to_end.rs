@@ -342,3 +342,89 @@ fn a_batch_gives_each_row_its_own_answer() {
     }
     assert!(alone[0] != alone[1], "the fixture must actually differ between rows");
 }
+
+// ---------------------------------------------------------------- what layer 08 asked for
+//
+// Three additions, each one a thing admission cannot do without. They are tested here rather than
+// beside the calls they belong to because each is only meaningful in the admission role.
+
+#[test]
+fn inspect_returns_the_adapters_exact_bytes_so_the_schemas_check_can_hold() {
+    let f = Fixture::new("inspect-adapter");
+    let axon = Axon::new(f.config(Mode::Admission));
+    axon.load(load_req(vec![f.model_ref()]));
+
+    let ins = axon.inspect(serde_json::from_value(f.model_ref()).unwrap()).expect("inspect");
+
+    // THIS IS THE WHOLE POINT, and it is why the reply carries text rather than a parsed document.
+    // `models.adapter` stores what comes back here, and `models_adapter_matches_hash` recomputes
+    // sha256 over the stored text -- so anything but the exact fetched bytes makes the verdict
+    // statement fail a CHECK constraint rather than admit a version.
+    assert_eq!(common::sha256(ins.adapter.as_bytes()), f.adapter_hash);
+    assert_eq!(ins.adapter_raw_bytes as usize, ins.adapter.len());
+}
+
+#[test]
+fn a_missing_release_asset_is_the_models_fault_and_is_named() {
+    use std::io::{Read, Write};
+
+    // A one-shot server that answers 404 to anything, standing in for a release with no
+    // `adapter.json` attached to it.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut s) = stream else { continue };
+            let _ = s.read(&mut [0u8; 1024]);
+            let _ = s.write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n");
+        }
+    });
+
+    let f = Fixture::new("asset-missing");
+    let mut cfg = f.config(Mode::Admission);
+    cfg.fetch_allow_hosts = vec![addr.to_string()];
+    let axon = Axon::new(cfg);
+
+    let hash = format!("sha256:{}", "b".repeat(64));
+    let req = load_req(vec![json!({
+        "weights_hash": hash, "adapter_hash": hash,
+        "weights_url": format!("http://{addr}/model.onnx"),
+        "adapter_url": format!("http://{addr}/adapter.json")})]);
+    let r = axon.load(req);
+
+    // Before layer 08 asked, this was FETCH_FAILED with fault `loader` -- which admission retries.
+    // A competitor who forgot to attach the file would have got three silent retries and then
+    // TIMED_OUT, the least actionable message on the platform.
+    assert_eq!(r.models[0].state, "refused");
+    assert_eq!(r.models[0].reason, Some("ASSET_MISSING"));
+    assert_eq!(r.models[0].fault, Some("model"));
+}
+
+#[test]
+fn validate_tells_an_expensive_adapter_from_a_wrong_one() {
+    let f = Fixture::new("over-budget-validate");
+    let axon = Axon::new(f.config(Mode::Admission));
+    axon.load(load_req(vec![f.model_ref()]));
+
+    let val = |budget: u64| -> ValidateReply {
+        axon.validate(
+            serde_json::from_value(json!({
+                "weights_hash": f.weights_hash, "adapter_hash": f.adapter_hash,
+                "budget_ops": budget, "observations": [common::obs()], "deadline_ms": 10_000
+            }))
+            .unwrap(),
+        )
+    };
+
+    // Too expensive: the program is fine, it just costs more than the game allows. The competitor
+    // should be told to make it cheaper, not to go and re-read the dialect specification.
+    let tight = val(20_000);
+    assert!(!tight.ok);
+    assert_eq!(tight.reason, Some("ADAPTER_FAILED"));
+    assert_eq!(tight.over_budget, Some(true));
+
+    // And under the game's real budget it passes, with the flag absent rather than false.
+    let ok = val(1_000_000);
+    assert!(ok.ok, "{ok:?}");
+    assert_eq!(ok.over_budget, None);
+}
