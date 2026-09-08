@@ -1,0 +1,258 @@
+//! The static facts `/inspect` reports, read straight out of the ONNX protobuf.
+//!
+//! `ort` runs a graph; it does not describe one. `/inspect` has to answer the opset, the operators
+//! used, the parameter count and the compressed size of the initializer data — none of which the
+//! runtime exposes.
+//!
+//! So this walks the wire format. It is not a protobuf implementation and does not need to be: a
+//! length-delimited message can be scanned for the handful of field numbers that matter without
+//! knowing the schema of anything else, and every unknown field is skipped by its wire type. That
+//! is ~100 lines and no dependency, against a `prost` build and a generated `onnx.proto` that has
+//! to track the spec. The cost is that it is tied to four field numbers, which are listed here and
+//! have not changed since ONNX 1.0.
+//!
+//! ```text
+//! ModelProto   .7  graph (GraphProto)      .8  opset_import (OperatorSetIdProto)
+//! GraphProto   .1  node (NodeProto)        .5  initializer (TensorProto)
+//! NodeProto    .4  op_type (string)
+//! TensorProto  .1  dims (int64, packed)    .2  data_type (int32)   .9  raw_data (bytes)
+//! OperatorSetIdProto  .1 domain (string)   .2  version (int64)
+//! ```
+
+use std::collections::BTreeSet;
+
+#[derive(Debug, Default)]
+pub struct GraphFacts {
+    pub opset: i64,
+    pub ops: BTreeSet<String>,
+    pub params: u64,
+    /// The concatenated initializer payloads — `DESIGN.md` §5's "model initializer tensor data",
+    /// which is the thing the size metric compresses. Weights, not the file.
+    pub initializer_bytes: Vec<u8>,
+}
+
+struct Reader<'a> {
+    b: &'a [u8],
+    at: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(b: &'a [u8]) -> Reader<'a> {
+        Reader { b, at: 0 }
+    }
+    fn done(&self) -> bool {
+        self.at >= self.b.len()
+    }
+    fn varint(&mut self) -> Option<u64> {
+        let mut v = 0u64;
+        let mut shift = 0;
+        loop {
+            let byte = *self.b.get(self.at)?;
+            self.at += 1;
+            v |= ((byte & 0x7f) as u64) << shift;
+            if byte & 0x80 == 0 {
+                return Some(v);
+            }
+            shift += 7;
+            if shift > 63 {
+                return None;
+            }
+        }
+    }
+    fn bytes(&mut self, n: usize) -> Option<&'a [u8]> {
+        let s = self.b.get(self.at..self.at.checked_add(n)?)?;
+        self.at += n;
+        Some(s)
+    }
+    /// The next field's number, with its payload already consumed. `None` at the end or on
+    /// anything malformed — a truncated file reports what it managed to read rather than failing,
+    /// because `/inspect`'s caller wants to know it is broken, not to get a parse error.
+    fn field(&mut self) -> Option<(u64, Field<'a>)> {
+        let key = self.varint()?;
+        let (num, wire) = (key >> 3, key & 7);
+        Some((
+            num,
+            match wire {
+                0 => Field::Varint(self.varint()?),
+                1 => Field::Fixed(self.bytes(8)?),
+                2 => {
+                    let n = self.varint()? as usize;
+                    Field::Len(self.bytes(n)?)
+                }
+                5 => Field::Fixed(self.bytes(4)?),
+                _ => return None,
+            },
+        ))
+    }
+}
+
+#[allow(dead_code)]
+enum Field<'a> {
+    Varint(u64),
+    Len(&'a [u8]),
+    /// Read to skip the payload; the value is never needed, since no field this scans is fixed-width.
+    Fixed(&'a [u8]),
+}
+
+impl<'a> Field<'a> {
+    fn len(self) -> Option<&'a [u8]> {
+        match self {
+            Field::Len(b) => Some(b),
+            _ => None,
+        }
+    }
+    fn varint(self) -> Option<u64> {
+        match self {
+            Field::Varint(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
+pub fn read(model: &[u8]) -> GraphFacts {
+    let mut f = GraphFacts::default();
+    let mut r = Reader::new(model);
+    while !r.done() {
+        let Some((num, val)) = r.field() else { break };
+        match num {
+            7 => {
+                if let Some(g) = val.len() {
+                    read_graph(g, &mut f);
+                }
+            }
+            8 => {
+                if let Some(o) = val.len() {
+                    // The default domain's version is the opset the platform pins. A model
+                    // carrying several imports reports the largest, which is what a reader means
+                    // by "the opset".
+                    let mut rr = Reader::new(o);
+                    let mut domain_is_default = true;
+                    let mut version = 0i64;
+                    while !rr.done() {
+                        let Some((n, v)) = rr.field() else { break };
+                        match n {
+                            1 => domain_is_default = v.len().is_some_and(|d| d.is_empty()),
+                            2 => version = v.varint().unwrap_or(0) as i64,
+                            _ => {}
+                        }
+                    }
+                    if domain_is_default {
+                        f.opset = f.opset.max(version);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    f
+}
+
+fn read_graph(g: &[u8], f: &mut GraphFacts) {
+    let mut r = Reader::new(g);
+    while !r.done() {
+        let Some((num, val)) = r.field() else { break };
+        match num {
+            1 => {
+                if let Some(node) = val.len() {
+                    let mut rr = Reader::new(node);
+                    while !rr.done() {
+                        let Some((n, v)) = rr.field() else { break };
+                        if n == 4 {
+                            if let Some(op) = v.len().and_then(|b| std::str::from_utf8(b).ok()) {
+                                f.ops.insert(op.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            5 => {
+                if let Some(t) = val.len() {
+                    read_initializer(t, f);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn read_initializer(t: &[u8], f: &mut GraphFacts) {
+    let mut r = Reader::new(t);
+    let mut count = 1u64;
+    let mut any_dim = false;
+    while !r.done() {
+        let Some((num, val)) = r.field() else { break };
+        match num {
+            1 => match val {
+                // `dims` is int64, and protobuf may send it packed or one field at a time.
+                Field::Varint(d) => {
+                    count = count.saturating_mul(d);
+                    any_dim = true;
+                }
+                Field::Len(b) => {
+                    let mut rr = Reader::new(b);
+                    while !rr.done() {
+                        match rr.varint() {
+                            Some(d) => {
+                                count = count.saturating_mul(d);
+                                any_dim = true;
+                            }
+                            None => break,
+                        }
+                    }
+                }
+                Field::Fixed(_) => {}
+            },
+            9 => {
+                if let Some(raw) = val.len() {
+                    f.initializer_bytes.extend_from_slice(raw);
+                }
+            }
+            _ => {}
+        }
+    }
+    // A scalar initializer has no dims and one element.
+    f.params = f.params.saturating_add(if any_dim { count } else { 1 });
+}
+
+/// `DESIGN.md` §5's size metric, both terms:
+/// `S = len(zstd-19(initializer data)) + len(zstd-19(adapter))`.
+pub fn size_metric(initializer_bytes: &[u8], adapter: &[u8]) -> (usize, usize, usize) {
+    let w = zstd::encode_all(initializer_bytes, 19).map(|v| v.len()).unwrap_or(0);
+    let a = zstd::encode_all(adapter, 19).map(|v| v.len()).unwrap_or(0);
+    (w + a, w, a)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MODEL: &[u8] = include_bytes!("../tests/fixtures/ants-micro.onnx");
+
+    #[test]
+    fn it_reads_a_real_model() {
+        let f = read(MODEL);
+        assert_eq!(f.opset, 17, "the fixture was exported at opset 17");
+        // The architecture make-model.py builds: a conv trunk with ReLU, then a gather.
+        assert!(f.ops.contains("Conv"), "ops: {:?}", f.ops);
+        assert!(f.ops.contains("Relu"), "ops: {:?}", f.ops);
+        assert_eq!(f.params, 6653, "the exporter reported 6653 parameters");
+        assert!(!f.initializer_bytes.is_empty());
+
+        let (s, w, a) = size_metric(&f.initializer_bytes, b"{}");
+        assert!(s > 0 && w > 0 && a > 0);
+        // 6653 fp32 parameters is ~26 KB raw; random weights barely compress, so the metric
+        // should land in the same order and inside the Micro class's 64 KiB.
+        assert!((10_000..64 * 1024).contains(&w), "compressed initializers were {w} bytes");
+        println!("\nfixture: opset {} · {} params · S={s} (weights {w}, adapter {a})\n  ops: {:?}",
+                 f.opset, f.params, f.ops);
+    }
+
+    #[test]
+    fn a_truncated_model_reports_what_it_read_rather_than_failing() {
+        // /inspect's caller wants to know a file is broken, not to get a parse error.
+        let f = read(&MODEL[..MODEL.len() / 2]);
+        assert!(f.params < 6653);
+        let _ = read(b"not a protobuf at all");
+        let _ = read(&[]);
+    }
+}

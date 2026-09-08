@@ -1,0 +1,44 @@
+# Axon — the Model Loader.
+#
+# Holds ONNX weights resident, evaluates each competitor's adapter under an operation count of its
+# own keeping, runs the graph, holds every seat to the turn clock, and answers one call per turn
+# for a whole wave. A second instance of the same binary stands beside Soma and is the platform's
+# only data path for admission.
+#
+# The specification is design/v2/04-model-loader.md in the tinybrains design repo. Where this crate
+# and that document disagree, the document is right and this is a bug.
+[package]
+name = "axon"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[lib]
+name = "axon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "axon"
+path = "src/main.rs"
+
+[dependencies]
+ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tiny_http = "0.12"
+ureq = "3"
+zstd = "0.13"
+
+[dev-dependencies]
+# The differential test only. The dialect is NOT built on datalogic-rs -- see src/dialect/mod.rs --
+# but the core JSONLogic subset must agree with it, because it is the engine Orion evaluates
+# workflow logic with and a competitor should not have to learn two dialects. So the test suite
+# runs the same programs through both and asserts equal results.
+datalogic-rs = { version = "5.4", features = ["templating"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
