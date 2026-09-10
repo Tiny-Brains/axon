@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use super::Axon;
 use crate::api::*;
-use crate::dialect::{self, Ports};
-use crate::model::{self, Graph};
+use crate::dialect;
+use crate::model;
 use crate::store::Kind;
 
 impl Axon {
@@ -56,7 +56,7 @@ impl Axon {
             over_budget: None,
             cases: Vec::new(),
             ops_max: 0,
-            flops_max: 0.0,
+            infer_us_max: 0,
             evaluator_digest: dialect::evaluator_digest(),
             dialect_version: dialect::DIALECT_VERSION,
         };
@@ -101,10 +101,13 @@ impl Axon {
                 }
             }
 
+            // Timed on its own, so the number reported is the graph's cost and not the adapter's.
+            let t_infer = Instant::now();
             let outputs = match graph.run(&feeds, deadline) {
                 Ok(o) => o,
                 Err(e) => return fail(reply, "SHAPE_MISMATCH", e, Some(i)),
             };
+            let infer_us = t_infer.elapsed().as_micros() as u64;
 
             let (action, ops_out) = adapter.run_out(outputs, obs, req.budget_ops);
             let action = match action {
@@ -112,9 +115,8 @@ impl Axon {
                 Err(e) => return fail(reply, adapter_reason(&e), e.to_string(), Some(i)),
             };
 
-            let flops = estimate_flops(&graph, &feeds);
             reply.ops_max = reply.ops_max.max(ops_in.max(ops_out));
-            reply.flops_max = reply.flops_max.max(flops);
+            reply.infer_us_max = reply.infer_us_max.max(infer_us);
             reply.cases.push(ValidateCase {
                 ops_in,
                 ops_out,
@@ -127,7 +129,7 @@ impl Axon {
                         shape: t.shape.clone(),
                     })
                     .collect(),
-                flops,
+                infer_us,
                 action_shape: describe(&action),
             });
         }
@@ -155,17 +157,4 @@ fn describe(v: &serde_json::Value) -> String {
         serde_json::Value::Null => "null".into(),
         serde_json::Value::Object(o) => format!("object with {} keys", o.len()),
     }
-}
-
-/// A multiply-accumulate estimate, at the shapes the adapter actually fed rather than at a declared
-/// input shape: it feeds an eligibility gate, so a number within a small factor is enough.
-fn estimate_flops(graph: &Graph, feeds: &Ports) -> f64 {
-    let spatial: usize = feeds
-        .iter()
-        .filter(|(_, t)| t.rank() >= 3)
-        .map(|(_, t)| t.shape[t.rank() - 2] * t.shape[t.rank() - 1])
-        .max()
-        .unwrap_or(1);
-    // Every parameter, once per spatial position, two FLOPs per multiply-accumulate.
-    2.0 * graph.facts.params as f64 * spatial as f64
 }

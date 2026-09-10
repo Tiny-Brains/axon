@@ -3,7 +3,7 @@
 
 Not a good player -- the weights are random. What matters is that it is a *real* ONNX graph of the
 shape a competitor would actually submit, so `/inspect` reports real operators and real parameter
-counts, `/validate` measures real FLOPs at the shapes the adapter produced, and `/play` runs a real
+counts, `/validate` times the graph at the shapes the adapter produced, and `/play` runs a real
 batched inference. A hand-written two-node graph would let every one of those be wrong.
 
 The architecture is the one the platform design §5 sanity-checks: a small fully-convolutional trunk over

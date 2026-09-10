@@ -90,7 +90,16 @@ pub struct PlayRowReply {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     pub ops: u64,
+    /// Wall clock from this row entering the call to leaving it, so it includes waiting behind
+    /// every group ahead of it. A latency, and **not** comparable between competitors.
     pub elapsed_ms: u64,
+    /// This row's share of its own group's inference: the group ran once for `k` rows and each is
+    /// charged `1/k` of it. Microseconds because a nano-class forward pass is under a millisecond.
+    ///
+    /// This is the number that compares two models. Both seats of a match are rows of the same
+    /// call, on the same replica, at the same instant, so machine and load are shared and the
+    /// comparison is paired.
+    pub infer_us: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#ref: Option<serde_json::Value>,
 }
@@ -184,7 +193,10 @@ pub struct ValidateReply {
     pub over_budget: Option<bool>,
     pub cases: Vec<ValidateCase>,
     pub ops_max: u64,
-    pub flops_max: f64,
+    /// The slowest reference case's inference, in microseconds. Reported, never a gate: wall clock
+    /// is the admission host's, and rejecting on it would make a verdict depend on a noisy
+    /// neighbour. It exists so a competitor can see the headroom the turn deadline leaves them.
+    pub infer_us_max: u64,
     pub evaluator_digest: String,
     pub dialect_version: u32,
 }
@@ -195,9 +207,9 @@ pub struct ValidateCase {
     pub ops_out: u64,
     pub elapsed_ms: u64,
     pub inputs: Vec<FedPort>,
-    /// At the shapes the adapter actually produced: a declared input shape is a claim, what is fed
-    /// is a fact.
-    pub flops: f64,
+    /// The graph run alone, at the shapes the adapter actually produced -- a declared input shape
+    /// is a claim, what is fed is a fact. `elapsed_ms` covers the adapter's two directions too.
+    pub infer_us: u64,
     pub action_shape: String,
 }
 

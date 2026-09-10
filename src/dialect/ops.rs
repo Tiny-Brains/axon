@@ -2,10 +2,11 @@
 //! §3). Each costs `1 + max(read, produced)`, charged BEFORE the work, so an operator that would
 //! produce a hundred million elements is refused rather than run and then reported.
 //!
-//! There is no arithmetic here beyond `cast` and `normalise`. Computation belongs in the graph,
-//! where the FLOP cap prices it; an adapter that could multiply matrices would be a second,
-//! unpriced model in front of the priced one. The test when an operator is proposed: does it move
-//! or reshape information, or does it compute with it?
+//! There is no arithmetic here beyond `cast` and `normalise`, and the cost rule above is the reason:
+//! `1 + max(read, produced)` prices marshalling, so an operator whose arithmetic is not proportional
+//! to its data is under-priced by an unbounded ratio -- a 128x128 matmul would be charged 32,769 for
+//! four million multiplies. The test when an operator is proposed: does it move or reshape
+//! information, or does it compute with it? (docs/dialect.md §6.)
 
 use std::sync::Arc;
 

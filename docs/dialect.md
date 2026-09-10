@@ -241,12 +241,34 @@ evaluator produced them.
 **There is no tensor arithmetic beyond `cast` and `normalise`.** No add, no multiply, no matmul, no
 convolution. This is the single most important constraint in §4 and it is not an omission.
 
-Computation belongs in the graph, because the graph is where the **FLOP cap** prices it
-(the platform design §5: the cap "exists to plug the one real exploit in a compressed-size metric"). An
-adapter that could multiply matrices would be a second, unpriced model sitting in front of the
-priced one, and a Nano-class entry could carry a Small-class policy in its adapter. The op count is
-a fairness bound on *marshalling*; the FLOP cap is the fairness bound on *thinking*. Keeping
-arithmetic out of the dialect is what keeps those two from being the same budget.
+**The argument changed on 10 September 2026 and the rule did not** — worth stating, because the
+justification used to be borrowed and is now intrinsic. It used to read: computation belongs in the
+graph because the graph is where the FLOP cap prices it. There is no FLOP cap any more
+(decision 46), and the rule stands anyway, on §4's own cost model.
+
+**A tensor operator costs `1 + max(elements read, elements produced)`. That is a marshalling price,
+and arithmetic does not obey it.** `tb.scatter` and `tb.stack` do work proportional to the elements
+they touch, so the rule bounds them exactly. A `tb.matmul` of two 128×128 tensors would read 32,768
+elements and produce 16,384 — a charge of 32,769 for four million multiplies. Every arithmetic
+operator is under-priced by the counting rule *by the ratio of its arithmetic to its data*, and that
+ratio is unbounded. Admitting one would not stretch the budget; it would mean the budget had stopped
+measuring anything.
+
+Two consequences follow, and both used to be the FLOP cap's job:
+
+- **A second, unpriced model.** An adapter that could multiply matrices would sit in front of the
+  priced one, and a Nano entry could carry a Small policy in its adapter — now caught by `S` rather
+  than by a compute cap, since the adapter's exact bytes are half of what `S` compresses.
+- **It is against the competitor's own interest anyway.** The dialect is a tree-walking interpreter
+  over JSON; the graph runs in ORT, compiled, threaded and vectorised. Since the turn deadline is
+  now the fairness control (axon/docs/design.md §10.2), arithmetic in the adapter spends the
+  competitor's own deadline share at roughly a thousand times the cost of spending it in the graph.
+
+The line to hold when an operator is requested is unchanged: **does it move or reshape information,
+or does it compute with it?** `scatter`, `one_hot`, `rle_expand`, `stack`, `transpose` move.
+`normalise` is on the line and is allowed because a fixed affine per tensor cannot encode a policy,
+and because its work *is* proportional to its elements. Anything whose cost grows faster than the
+data it touches is refused, and the answer is "put it in your ONNX graph".
 
 The line to hold when an operator is requested: **does it move or reshape information, or does it
 compute with it?** `scatter`, `one_hot`, `rle_expand`, `stack`, `transpose` move. `normalise` is on

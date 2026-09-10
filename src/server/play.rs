@@ -26,6 +26,12 @@ struct Prepared {
 impl Axon {
     pub fn play(&self, req: PlayRequest) -> PlayReply {
         let deadline = Instant::now() + Duration::from_millis(req.deadline_ms);
+        // Every row owns an equal share of the call's deadline, and a group of k rows owns k
+        // shares. Without this the deadline is one wall consumed in group order, so an expensive
+        // model spends the budget and the groups behind it answer TIMED_OUT -- other competitors'
+        // rows, struck for someone else's graph. With the FLOP cap gone the clock IS the fairness
+        // control, and a shared clock is not one.
+        let share = Duration::from_millis(req.deadline_ms) / req.rows.len().max(1) as u32;
         let mut rows: Vec<PlayRowReply> = Vec::with_capacity(req.rows.len());
         let mut prepared: Vec<Option<Prepared>> = Vec::with_capacity(req.rows.len());
 
@@ -64,10 +70,22 @@ impl Axon {
         // ---- 2. one inference per group whose shapes agree
         let mut outputs: Vec<Option<Result<Ports, String>>> =
             (0..prepared.len()).map(|_| None).collect();
+        let mut infer_us: Vec<u64> = vec![0; prepared.len()];
         for idx in groups(&req.rows, &prepared) {
             let of = |i: usize| prepared[i].as_ref().expect("a group holds only prepared rows");
             let feeds: Vec<&Ports> = idx.iter().map(|&i| &of(i).feeds).collect();
-            match run_group(&of(idx[0]).graph, &feeds, deadline) {
+            // Its own shares, never past the call's own deadline. A group that overruns times
+            // itself out and the rows behind it still get theirs.
+            let group_deadline = (Instant::now() + share * idx.len() as u32).min(deadline);
+            let t_infer = Instant::now();
+            let ran = run_group(&of(idx[0]).graph, &feeds, group_deadline);
+            // The group ran once for k rows, so each is charged 1/k. This is the model's cost;
+            // `elapsed_ms` is its latency and includes the wait behind everyone else.
+            let per_row = t_infer.elapsed().as_micros() as u64 / idx.len() as u64;
+            for &i in &idx {
+                infer_us[i] = per_row;
+            }
+            match ran {
                 Ok(per_row) => {
                     for (&i, a) in idx.iter().zip(per_row) {
                         outputs[i] = Some(Ok(a));
@@ -111,7 +129,7 @@ impl Axon {
                     ..Default::default()
                 },
             };
-            rows[i] = finish(reply, row, p.started);
+            rows[i] = finish(PlayRowReply { infer_us: infer_us[i], ..reply }, row, p.started);
         }
 
         PlayReply {

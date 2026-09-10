@@ -148,7 +148,7 @@ hashes rather than pairs.
 - **What batching is worth, measured 8 September 2026** (64 seats, the same Micro-class trunk,
   one authored ragged and one authored dense):
 
-  | board | one inference per seat | one for the wave | speedup | MFLOP per board |
+  | board | one inference per seat | one for the wave | speedup | MFLOP per board (as then estimated) |
   |---|---|---|---|---|
   | 32×32 | 10.7 ms | 5.2 ms | **2.05×** | 13.5 |
   | 64×64 | 23.5 ms | 14.4 ms | **1.63×** | 54.1 |
@@ -262,7 +262,7 @@ inference.
   redeploy of this binary.
 - **`ops` and `unsupported_ops` are reported, not judged**, against an allowlist the caller passes
   or, absent one, the loader's configured default. Same principle: facts here, policy there.
-- **There is no FLOP number in this reply**, and its absence is deliberate — see §3.6.
+- **There is no cost number in this reply**, and its absence is deliberate — see §3.6.
 
 ### 3.6 `POST /validate` — admission only
 
@@ -278,10 +278,10 @@ inference.
   "over_budget": null,                  // when ok is false: too expensive, or wrong
   "cases": [ { "ops_in": 137_402, "ops_out": 912, "elapsed_ms": 47,
                "inputs": [ { "name": "board", "dtype": "int8", "shape": [1,6,128,128] } ],
-               "flops": 3.1e8,
+               "infer_us": 2_140,
                "action_shape": "array[180] of string" } ],
   "ops_max": 138_314,
-  "flops_max": 3.1e8,
+  "infer_us_max": 2_140,
   "evaluator_digest": "sha256:…", "dialect_version": 1 }
 ```
 
@@ -297,11 +297,18 @@ malformed program answers `ADAPTER_INVALID` with `false`; admission turns the fi
 `ADAPTER_OVER_BUDGET`. Collapsing them would tell a competitor whose adapter merely costs too much
 to go and re-read the dialect specification.
 
-**The FLOP number comes from here, not from `/inspect`, and that is the point.** FLOPs are measured
-on the graph as actually run, at **the shapes the adapter produced from the reference observation** —
-not at a shape the competitor declared. A declared input shape is a claim; what the adapter feeds is
-a fact, and a graph whose real input is eight times the declared one would otherwise pass a cap it
-does not respect. Admission applies `budgets.flop_caps` for the class to `flops_max`.
+**The cost number comes from here, not from `/inspect`, and that is the point.** The graph is timed
+as actually run, at **the shapes the adapter produced from the reference observation** — not at a
+shape the competitor declared. A declared input shape is a claim; what the adapter feeds is a fact,
+and a graph whose real input is eight times the declared one would otherwise report a cost it does
+not have. `infer_us` times the graph alone; `elapsed_ms` covers the adapter's two directions too.
+
+**`infer_us_max` is reported and never judged**, and that is the whole difference between it and the
+FLOP cap it replaced (**decision 46**, 10 September 2026). Wall clock belongs to the admission host,
+so a verdict that turned on it would depend on a noisy neighbour, and a re-run could flip it. It is
+published so a competitor can see how much of the turn deadline their graph leaves them — the bound
+that now actually decides whether they forfeit. The measurement that argued the cap away, and the
+per-row deadline that had to land first, are §10.2.
 
 **A requirement this places on admission and on the game:** the reference set must contain a
 worst-case observation — the largest map, the most units — or admission is theatre. The budget is
@@ -432,11 +439,11 @@ The sequence admission drives, all four calls on the same resident pair:
 POST /load       { hashes, urls }        → resident, or refused with a reason for the competitor
 POST /inspect    { hashes }              → params, opset, ops, S, declared IO
 POST /validate   { hashes, budget_ops, observations }
-                                         → ok, ops_max, flops_max, actual input shapes
+                                         → ok, ops_max, infer_us_max, actual input shapes
 POST /unload     { hashes }              → released
 ```
 
-Admission records the verdict, the class from `size_metric_bytes`, the FLOP check from `flops_max`,
+Admission records the verdict, the class from `size_metric_bytes`, the measured `infer_us_max`,
 and `evaluator_digest` on the `models` row, then moves the version `testing → verified`
 (the schema §3.2). What this page owes admission is that **every refusal carries a reason word a
 competitor can act on** — the whole vocabulary is §9 — and that the four calls are individually
@@ -509,12 +516,49 @@ carries the economics.
 > its own forward pass either way. The decision survives the correction; the argument for it was
 > overstated.
 
-### 10.2 Runtime
+### 10.2 Runtime, and where fairness actually lives
 
 ONNX Runtime, CPU execution provider, deterministic options, one session per resident weights hash,
-a thread pool sized by config. The per-call deadline is enforced here. **Fairness is the static FLOP
-cap checked at admission, not the clock**; the deadline is a safety net. A GPU pool for the `large`
-class is a configuration value that is left empty today.
+a thread pool sized by config. A GPU pool for the `large` class is a configuration value that is
+left empty today.
+
+**The clock is the fairness control. There is no FLOP cap** — decision 46, 10 September 2026. This
+sentence used to read the other way round, and the inversion is the whole of that decision, so the
+measurement that forced it is recorded here rather than in a commit message.
+
+The cap was `2 · params · spatial` (the old `estimate_flops`). Three findings retired it:
+
+1. **It did not do the job it was introduced for.** `docs/dialect.md` §6 justified it as plugging
+   "the one real exploit in a compressed-size metric" — few bytes, much compute: weight-shared
+   iteration, or a HashedNets-style gather that materialises a large matrix from a small table.
+   Every one of those *minimises* `params`, which is the only quantity the estimate read. It priced
+   the honest case and missed the exploit.
+2. **It was shadowed on both sides.** Against the committed `ants-dense` fixture — 6,653 params,
+   `S` = 25,001 bytes — the estimate is 218 MFLOP, 22% of Micro's 1 GFLOP cap. Below Micro the
+   *byte* cap binds first (at the measured zstd ratio of 0.92, Nano's 8,192 bytes is ~2,225 fp32
+   parameters against the cap's 7,629). Above it the *deadline* binds first: at ~120 GFLOP/s
+   measured on one developer machine, Mini's 4 GFLOP is more than a 64-seat wave's per-seat share of
+   `turn_ms`, and Large's 128 GFLOP needs ~1,070 ms — unreachable for a single seat alone in the
+   wave. The cap decided something only for a quantized Nano or Micro entry.
+3. **It was near-redundant with `S`.** Both are monotone in `params`, so it was the size metric in
+   different units, with two distortions: it over-charged dense heads (whose parameters are not
+   applied per spatial position) and under-charged weight-shared iteration (whose are applied `K`
+   times and counted once).
+
+**What replaces it is the per-row deadline share in `server/play.rs`, and that had to land first.**
+A single deadline consumed in group order is not a fairness control: an expensive graph spends the
+call's budget and the groups behind it answer `TIMED_OUT`, so one competitor's compute strikes
+another's seat. Each row now owns `deadline_ms / rows` and a group of `k` owns `k` shares, capped by
+the call's own deadline — a slow model times itself out and pays its own strike.
+
+**And each row is charged its own cost, not its latency.** `elapsed_ms` runs from a row entering the
+call to leaving it, so it is dominated by the total call duration and carries almost no per-model
+signal — worse, a seat later in the request looks *faster* because its clock started later.
+`infer_us` is the row's share of its own group's inference (`group time / k`), in microseconds
+because a Nano forward pass is under a millisecond. **That is the number that compares two models**,
+and it compares them well: both seats of a match are rows of the same call, on the same replica, at
+the same instant, so machine, load and thermal state are shared and the comparison is paired.
+Nothing gates on it.
 
 ### 10.3 Telemetry
 
@@ -556,8 +600,8 @@ Decisions **6** (the operation budget, measured at 1,000,000 rather than argued)
 resident call), with the unnumbered calls this service forced — a tensor is opaque to a program, the
 operator set has no arithmetic, the count is a run-time count, `dialect_version` and
 `evaluator_digest` are different things, `/load` takes hashes while only admission takes URLs, the
-mirror happens inside admission's `/load`, `fault: model | loader` on every refusal, FLOPs measured
-at the shapes the adapter actually produced, and the 4 MiB adapter cap — are recorded with their
+mirror happens inside admission's `/load`, `fault: model | loader` on every refusal, the graph
+timed at the shapes the adapter actually produced, and the 4 MiB adapter cap — are recorded with their
 reasoning in
 [devops/docs/decisions.md](https://github.com/Tiny-Brains/devops/blob/main/docs/decisions.md) §3,
 under *The loader*.
@@ -639,9 +683,9 @@ constant — deployment's, set against the class mix a replica actually serves.
    a policy. If a second operator ever needs the same argument, the line has moved and should be
    re-drawn deliberately rather than by precedent.
 3. **Should `/validate` also run the graph a second time at a small shape** to catch a model whose
-   FLOP cost is superlinear in the map? The cap is checked at one worst case, which is the right
-   case, but it says nothing about behaviour between shapes. Cheap to add; unclear it buys anything
-   while one preset per wave fixes the shape anyway.
+   cost is superlinear in the map? It is timed at one worst case, which is the right case, but that
+   says nothing about behaviour between shapes. Cheap to add; unclear it buys anything while one
+   preset per wave fixes the shape anyway.
 4. ~~**The per-call deadline and K.**~~ **Answered, 8 September 2026, and the per-call deadline
    stays.** Measured: K=32 is 66 ms of loader against a `turn_ms` of 1000 — 16% of the turn with the
    engine and Orion included (§13.1). A per-row deadline with an admission-control queue would be

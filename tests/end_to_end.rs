@@ -183,11 +183,11 @@ fn admission_inspects_and_validates_and_does_not_play() {
     assert!(ins.size_metric_bytes < 64 * 1024, "S = {}", ins.size_metric_bytes);
     let names: Vec<&str> = ins.inputs.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, vec!["board", "ant_r", "ant_c"]);
-    // The declared board shape has two dynamic dimensions, which is exactly why the FLOP number
-    // cannot come from here.
+    // The declared board shape has two dynamic dimensions, which is exactly why nothing about the
+    // cost of running this graph can come from here.
     assert!(ins.inputs[0].shape.iter().any(|d| d.is_none()));
 
-    // ---- /validate: run the adapter, and measure FLOPs at what it actually fed
+    // ---- /validate: run the adapter, and time the graph at what it actually fed
     let val: ValidateRequest = serde_json::from_value(json!({
         "weights_hash": f.weights_hash, "adapter_hash": f.adapter_hash,
         "budget_ops": 1_000_000, "observations": [common::obs()], "deadline_ms": 10_000
@@ -200,10 +200,12 @@ fn admission_inspects_and_validates_and_does_not_play() {
     assert_eq!(c.inputs.iter().find(|p| p.name == "board").unwrap().shape, vec![1, 6, 128, 128]);
     assert!(c.action_shape.starts_with("array[90]"), "{}", c.action_shape);
     assert!(val.ops_max > 190_000, "ops_max {}", val.ops_max);
-    assert!(val.flops_max > 0.0);
+    // Reported, never a gate -- so the assertion is that it was measured, not that it is small.
+    assert!(val.infer_us_max > 0);
+    assert_eq!(c.infer_us, val.infer_us_max);
     println!(
-        "\nadmission: S={} ({} params, opset {}) · ops_max={} · flops_max={:.3e}",
-        ins.size_metric_bytes, ins.params, ins.opset, val.ops_max, val.flops_max
+        "\nadmission: S={} ({} params, opset {}) · ops_max={} · infer={} µs",
+        ins.size_metric_bytes, ins.params, ins.opset, val.ops_max, val.infer_us_max
     );
 
     // The mode check is in the HTTP layer; the call itself is harmless.

@@ -167,6 +167,15 @@ The source was reorganised on 10 September 2026 — `server/`, `model/` and `sto
 now, `onnx_meta` moved to `model::meta`, and `AXON_ADAPTER_THREADS` is gone because nothing read it.
 The evaluator digest is unchanged, which is the property that mattered.
 
+**The FLOP cap was removed the same day** (devops decision 46, argued from measurement in
+[`docs/design.md`](docs/design.md) §10.2). `estimate_flops` is gone and `/validate` reports
+`infer_us_max` — the graph timed at the shapes the adapter fed — in its place, reported and never a
+gate. The clock is now the fairness control, so `/play` divides `deadline_ms` among the rows of a
+call and charges each row `infer_us`, its share of its own group's inference: a slow graph times
+*itself* out instead of striking the seats behind it. The evaluator digest is unchanged here too, so
+no re-validation sweep. **Untested against a graph that actually overruns** — every committed
+fixture spends under 1% of a seat's share, so the `TIMED_OUT` arm has never fired in anger.
+
 ## More
 
 - Local references: [wire types](src/api.rs), [configuration](src/config.rs), and [dialect tests](tests/dialect.rs).

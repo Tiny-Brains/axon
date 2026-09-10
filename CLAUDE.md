@@ -88,9 +88,10 @@ work so the budget bounds the work rather than the report.
   changing a cost fires a re-validation sweep of the entire roster; a refactor that changes no
   semantics must leave the digest untouched (the 10 September 2026 reorganisation is the precedent).
   A semantic choice an adapter can observe but no operator name implies belongs in `SEMANTICS`.
-- **No tensor arithmetic beyond `cast` and `normalise`.** Computation belongs in the ONNX graph where
-  the FLOP cap prices it; an adapter that could multiply matrices is a second, unpriced model. The
-  test for a proposed operator: does it move or reshape information, or compute with it?
+- **No tensor arithmetic beyond `cast` and `normalise`.** Not because of the FLOP cap — there is none
+  since decision 46 — but because `1 + max(read, produced)` prices *marshalling*: an operator whose
+  arithmetic is not proportional to its data is under-priced without bound. The test for a proposed
+  operator: does it move or reshape information, or compute with it?
 - **`budget_ops` and `deadline_ms` are never configuration.** They are the game's, they arrive on
   every `/play` and `/validate` call, and putting them in `src/config.rs` would put a game's rules in
   a game-agnostic process. The op count is charged per direction and aborts mid-operator.
@@ -101,5 +102,9 @@ work so the budget bounds the work rather than the report.
 - **`tests/fixtures/*.onnx` are committed build output**, regenerated deterministically by
   `make-model.py`; the ants observation is a real worst case (128×128, turn 600, 90 ants) and the
   op-count assertions in `tests/ants_adapter.rs` are measurements, not guesses.
-- **FLOPs are measured at the shapes the adapter actually produced**, never at a declared input
-  shape — a declared shape is a claim, what the adapter feeds is a fact.
+- **The clock is the fairness control; there is no FLOP cap** (decision 46). `play.rs` gives each row
+  `deadline_ms / rows` and a group of `k` rows `k` shares, so a slow model times *itself* out instead
+  of striking the rows behind it. `infer_us` is a row's share of its own group's inference and is the
+  number that compares two models; `elapsed_ms` is latency and is not. `/validate` reports
+  `infer_us_max` at the shapes the adapter actually produced — a declared shape is a claim, what the
+  adapter feeds is a fact — and **nothing gates on it**: wall clock is the host's, not the model's.
