@@ -1,13 +1,8 @@
 //! `dialect_version` and `evaluator_digest` — docs/dialect.md §5.
 //!
-//! The digest is `sha256` over the **canonical description of the dialect**: the version, the core
-//! operator list, the tensor operator table with each signature, and the counting rules. It is
-//! **not** a hash of the binary, and that difference earns its keep: a rebuild of Axon — a
-//! dependency bump, a performance fix, a new endpoint — reports the same digest, so finding 5's
-//! re-validation sweep fires on a change to what an adapter *means* and not on a release.
-//!
-//! soma/docs/schema.md records `models.evaluator_digest` on every admitted version; jodi/docs/admission.md sweeps when the
-//! dialect version changes.
+//! The digest is sha256 over a canonical description of the dialect — version, operator tables,
+//! counting rules, semantics — and NOT of the binary, so a rebuild reports the same digest and the
+//! re-validation sweep fires on a change to what an adapter means rather than on a release.
 
 use sha2::{Digest, Sha256};
 
@@ -16,8 +11,7 @@ use super::ops::TENSOR_OPS;
 
 pub const DIALECT_VERSION: u32 = 1;
 
-/// The counting rules, in the digest, because changing one changes every adapter's cost without
-/// changing a single operator.
+/// In the digest because changing one changes every adapter's cost without touching an operator.
 const COUNTING_RULES: &[&str] = &[
     "node:1",
     "tensor_op:1+max(read,produced)",

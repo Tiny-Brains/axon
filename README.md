@@ -96,7 +96,7 @@ curl --fail --silent --show-error http://127.0.0.1:9090/healthz
 cargo test
 ```
 
-The suite has 51 tests: 48 exercise local behavior and three live S3 checks return early unless
+The suite has 52 tests: 49 exercise local behavior and three live S3 checks return early unless
 AXON_S3_LIVE is set. To exercise those checks, configure the S3 variables below and run
 `AXON_S3_LIVE=1 cargo test --test s3_live -- --nocapture` against a disposable test bucket.
 [tests/differential.rs](tests/differential.rs) compares the shared JSONLogic subset with datalogic-rs
@@ -119,7 +119,7 @@ a directory, which takes precedence over an HTTP store; incomplete S3 configurat
 | AXON_FETCH_ALLOW_HOSTS | Admission asset host allowlist | Admission defaults to GitHub hosts; replica always uses an empty list |
 | AXON_MEMORY_BUDGET_BYTES, AXON_IDLE_TTL_S | Residency capacity and eviction | Defaults apply; insufficient capacity refuses holds |
 | AXON_MAX_WEIGHTS_BYTES, AXON_MAX_ADAPTER_BYTES | Asset size backstops | Defaults apply; oversized assets are refused |
-| AXON_THREADS, AXON_ADAPTER_THREADS, AXON_MAX_IN_FLIGHT | Execution capacity | Defaults apply; poor sizing constrains throughput |
+| AXON_THREADS, AXON_MAX_IN_FLIGHT | Session threads and concurrent calls | Defaults apply; poor sizing constrains throughput |
 
 Capacity settings are tuning policy. Game budgets belong to the cartridge and arrive in requests.
 Replica URL rejection limits submitted asset fetching; it does not prevent access to its configured
@@ -130,12 +130,16 @@ remote store or replace deployment network isolation.
 ```text
 src/main.rs        service entry point and --dialect command
 src/api.rs         request and response types
-src/server.rs      HTTP routing, role checks, and call execution
 src/config.rs      environment configuration and store selection
 src/residency.rs   holds, eviction, and memory accounting
-src/model.rs       ONNX sessions, batching, and deadlines
-src/onnx_meta.rs   static graph inspection
-src/store.rs       directory, HTTP, and SigV4 stores
+src/server/        mod.rs   the service type, /load, /unload, /resident
+                   play.rs  the turn: adapters in, grouped inference, adapters out
+                   admission.rs  /inspect and /validate
+                   http.rs  routing, role checks, and authentication
+src/model/         mod.rs   ONNX sessions, deadlines, and batchability
+                   meta.rs  static graph inspection and the size metric
+src/store/         mod.rs   keys, the trait, directory and HTTP stores
+                   s3.rs    S3-compatible store and the SigV4 chain
 src/dialect/       evaluator, tensor operators, budget, and semantic digest
 tests/             dialect, differential, ONNX, adapter, and live S3 checks
 examples/          fixture-store generator
@@ -153,11 +157,15 @@ Dockerfile         service image build
 
 ## Status
 
-**8 September 2026.** All six model calls and health routing are implemented, including SigV4
-storage and admission mirroring. `cargo test` passes the 48 local tests; the three S3 tests require
-an explicit live-store run and were not exercised against a store during this rewrite. Loading is
-synchronous, the resident loading list remains empty, and no GPU pool or cross-architecture counter
-conformance run is provided.
+**10 September 2026.** All six model calls and health routing are implemented, including SigV4
+storage and admission mirroring. `cargo test` passes the 49 local tests; the three S3 tests require
+an explicit live-store run and have not been exercised against a store. Loading is synchronous, the
+resident loading list remains empty, and no GPU pool or cross-architecture counter conformance run
+is provided.
+
+The source was reorganised on 10 September 2026 — `server/`, `model/` and `store/` are directories
+now, `onnx_meta` moved to `model::meta`, and `AXON_ADAPTER_THREADS` is gone because nothing read it.
+The evaluator digest is unchanged, which is the property that mattered.
 
 ## More
 

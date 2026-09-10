@@ -1,24 +1,13 @@
-//! The evaluator, and the operation count.
+//! The evaluator and the operation count — docs/dialect.md §4:
 //!
-//! Layer docs/dialect.md §4, stated exactly enough that this file is a transcription of it:
-//!
-//!   1. every node **evaluated** costs 1 — applied, not written
+//!   1. every node evaluated costs 1 — applied, not written
 //!   2. every tensor operator costs `1 + max(elements read, elements produced)`
 //!   3. literals cost 1 however large
 //!   4. the two directions are counted separately
-//!   5. over budget aborts **immediately, mid-operator**, and is never retried
+//!   5. over budget aborts immediately, mid-operator, and is never retried
 //!
 //! Rule 5 is why the budget lives on the context and is checked inside the tensor operators' own
-//! loops rather than only at their edges: a bound that is only enforced after the work is done
-//! bounds the *report*, not the work.
-//!
-//! **On scope.** A `map`/`filter`/`reduce` body is evaluated with the element as its data, and —
-//! deliberately, matching Orion — there is no way to reach the outer document from inside one.
-//! `reduce`'s initial accumulator is the exception, evaluated in the *outer* scope, which makes it
-//! the one channel by which an outer value reaches a body. That asymmetry is not this dialect's
-//! invention; it is what the platform's own workflows rely on
-//! (`the wave-turn spikeFINDINGS.md` §2.6), and an adapter behaving differently from a workflow
-//! over the same expression would be worse than the asymmetry.
+//! loops: a bound enforced after the work bounds the report, not the work.
 
 use std::sync::Arc;
 
@@ -27,9 +16,9 @@ use super::value::{fmt_num, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fault {
-    /// The program spent its budget. A `caller_input` error in Orion's vocabulary: never retried.
+    /// The program spent its budget. Never retried.
     OverBudget { budget: u64 },
-    /// The program is not in the dialect — an unknown operator, a bad arity, a wrong type.
+    /// Not in the dialect — an unknown operator, a bad arity, a wrong type.
     Invalid(String),
 }
 
@@ -65,9 +54,8 @@ pub struct Ctx {
     depth: u32,
 }
 
-/// A program can nest, but not without limit. 64 is far above any adapter anyone would write and
-/// far below what would exhaust the stack; a program that reaches it is malformed rather than
-/// expensive, so it is `Invalid` and not `OverBudget`.
+/// Far above any adapter anyone would write and far below what exhausts the stack. A program that
+/// reaches it is malformed rather than expensive, so it is `Invalid` and not `OverBudget`.
 const MAX_DEPTH: u32 = 64;
 
 impl Ctx {
@@ -75,7 +63,7 @@ impl Ctx {
         Ctx { ops: 0, budget, depth: 0 }
     }
 
-    /// Charge `n` operations. The only place the budget is enforced.
+    /// The only place the budget is enforced.
     #[inline]
     pub fn charge(&mut self, n: u64) -> Res<()> {
         self.ops = self.ops.saturating_add(n);
@@ -94,8 +82,7 @@ pub fn run(program: &serde_json::Value, data: &Value, budget: u64) -> (Res<Value
     (out, ctx.ops)
 }
 
-/// One node. Costs 1, always, before anything else happens — so a program that is nothing but
-/// deeply nested literals still pays for its own size.
+/// One node. Costs 1 before anything else happens, so nested literals pay for their own size.
 pub fn eval(node: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<Value> {
     ctx.charge(1)?;
     ctx.depth += 1;
@@ -123,21 +110,15 @@ fn eval_inner(node: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<Valu
         other => return Ok(Value::from_json(other)),
     };
 
-    // **The object rule** — docs/dialect.md §1. An object whose single key is a known operator is an
+    // The object rule — docs/dialect.md §1: an object whose single key is a known operator is an
     // operation; any other object is a literal whose values are evaluated and whose keys are not.
-    // JSONLogic has no object constructor and both programs must produce one, so the rule that
-    // most implementations leave to inference is stated here and tested.
     if obj.len() == 1 {
         let (op, arg) = obj.iter().next().unwrap();
         if is_operator(op) {
             return apply(op, arg, data, ctx);
         }
-        // **The `tb.` namespace is reserved.** Without this, a single-key object whose key is an
-        // unknown operator falls through to the literal rule and `{"tb.scattr": [...]}` — one
-        // letter away from `tb.scatter` — evaluates to an *object* that is then handed to the
-        // graph as an input that is not a tensor. The error would name the wrong thing, at the
-        // wrong boundary, and only after the adapter had been admitted. A reserved prefix makes
-        // the typo a refusal at the operator that does not exist.
+        // The `tb.` namespace is reserved, so `{"tb.scattr": ...}` is a refusal here rather than
+        // an object handed to the graph as an input that is not a tensor.
         if op.starts_with("tb.") {
             return Err(Fault::invalid(format!(
                 "no operator '{op}' in this dialect; the 'tb.' prefix is reserved for it"
@@ -167,9 +148,9 @@ pub fn is_operator(name: &str) -> bool {
     CORE.contains(&name) || ops::is_tensor_op(name)
 }
 
-/// The core operator set. It is a **list**, not "whatever JSONLogic has", because the dialect's
-/// surface is what `dialect_version` versions and what the re-validation sweep is defined against
-/// (docs/dialect.md §5).
+/// The core operator set: a list, not "whatever JSONLogic has", because this surface is what
+/// `dialect_version` versions and what the re-validation sweep is defined against.
+#[rustfmt::skip]
 pub const CORE: &[&str] = &[
     "var", "val", "missing", "missing_some", "if", "?:", "==", "===", "!=", "!==", "!", "!!",
     "and", "or", ">", ">=", "<", "<=", "+", "-", "*", "/", "%", "max", "min", "cat", "substr",
@@ -320,7 +301,10 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
             let mut acc = init;
             for v in &a {
                 let n = v.to_num().ok_or_else(|| {
-                    Fault::invalid(format!("'{op}' got a {} where a number was needed", v.type_name()))
+                    Fault::invalid(format!(
+                        "'{op}' got a {} where a number was needed",
+                        v.type_name()
+                    ))
                 })?;
                 acc = if op == "+" { acc + n } else { acc * n };
             }
@@ -341,10 +325,9 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
             if nums.len() < 2 {
                 return Err(Fault::invalid(format!("'{op}' needs two arguments")));
             }
+            // Not a fault: dividing by a count that happens to be zero on one observation should
+            // not refuse the turn. `null` propagates and `??` says what to do about it.
             if nums[1] == 0.0 {
-                // Not a fault: a competitor dividing by a count that happens to be zero on one
-                // observation should not have their whole turn refused. `null` propagates, and
-                // `??` is how they say what to do about it.
                 return Ok(Value::Null);
             }
             Ok(Value::Num(if op == "/" { nums[0] / nums[1] } else { nums[0] % nums[1] }))
@@ -355,10 +338,13 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
             if nums.is_empty() {
                 return Ok(Value::Null);
             }
-            Ok(Value::Num(nums.iter().copied().fold(
-                nums[0],
-                |x, y| if (op == "max") == (y > x) { y } else { x },
-            )))
+            Ok(Value::Num(nums.iter().copied().fold(nums[0], |x, y| {
+                if (op == "max") == (y > x) {
+                    y
+                } else {
+                    x
+                }
+            })))
         }
         "abs" => Ok(Value::Num(num1(arg, data, ctx, op)?.abs())),
         "ceil" => Ok(Value::Num(num1(arg, data, ctx, op)?.ceil())),
@@ -445,7 +431,8 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
         }
         "distinct" => {
             let a = args_of(arg);
-            let items = eval(a[0], data, ctx)?;
+            let Some(src) = a.first() else { return Ok(Value::arr(vec![])) };
+            let items = eval(src, data, ctx)?;
             let items = items.as_arr().unwrap_or(&[]).to_vec();
             let key_expr = a.get(1);
             let mut seen: Vec<Value> = Vec::new();
@@ -485,8 +472,9 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
 
         // ---------------------------------------------------------------- iteration
         //
-        // The body is evaluated with the ELEMENT as its data. There is no path from inside a body
-        // to the outer document — see the note at the top of this file.
+        // A body is evaluated with the ELEMENT as its data: there is no path from inside one to
+        // the outer document. `reduce`'s seed, evaluated in the outer scope, is the only channel
+        // in, and the platform's own workflows depend on that asymmetry.
         "map" | "filter" | "all" | "some" | "none" => {
             let a = args_of(arg);
             if a.len() < 2 {
@@ -526,12 +514,8 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
                             }
                         } else {
                             every = false;
-                            if op == "all" || op == "none" {
-                                // `none` still has to see the rest? No: one truthy is enough to
-                                // decide it, and a falsy one decides nothing.
-                                if op == "all" {
-                                    break;
-                                }
+                            if op == "all" {
+                                break;
                             }
                         }
                     }
@@ -550,8 +534,6 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
             }
             let src = eval(a[0], data, ctx)?;
             let items = src.as_arr().unwrap_or(&[]).to_vec();
-            // The initial accumulator is evaluated in the OUTER scope. It is the one channel by
-            // which an outer value reaches a body, and the platform's own workflows depend on it.
             let mut acc = match a.get(2) {
                 Some(e) => eval(e, data, ctx)?,
                 None => Value::Null,
@@ -585,9 +567,7 @@ fn first(arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<Value> {
 }
 
 fn num1(arg: &serde_json::Value, data: &Value, ctx: &mut Ctx, op: &str) -> Res<f64> {
-    first(arg, data, ctx)?
-        .to_num()
-        .ok_or_else(|| Fault::invalid(format!("'{op}' needs a number")))
+    first(arg, data, ctx)?.to_num().ok_or_else(|| Fault::invalid(format!("'{op}' needs a number")))
 }
 
 fn to_nums(a: &[Value], op: &str) -> Res<Vec<f64>> {
@@ -612,9 +592,8 @@ fn bin(
     Ok(f(&x, &y))
 }
 
-/// `var`/`val` path resolution. A string path splits on `.`; a number indexes; an array is a
-/// chain of segments, each already evaluated, which is how a computed segment is written.
-/// An empty path is the document itself.
+/// `var`/`val` path resolution: a string splits on `.`, a number indexes, an array is a chain of
+/// already-evaluated segments, and an empty path is the document itself.
 pub fn lookup(data: &Value, path: &Value) -> Option<Value> {
     match path {
         Value::Null => Some(data.clone()),
@@ -642,8 +621,8 @@ fn step(cur: &Value, seg: &str) -> Option<Value> {
     match cur {
         Value::Obj(_) => cur.get(seg).cloned(),
         Value::Arr(a) => seg.parse::<usize>().ok().and_then(|i| a.get(i).cloned()),
+        // The only two things a program may ask a tensor.
         Value::Tensor(t) => match seg {
-            // The only two things a program may ask a tensor.
             "shape" => Some(Value::arr(t.shape.iter().map(|&n| Value::Num(n as f64)).collect())),
             "dtype" => Some(Value::str(t.dtype.name())),
             _ => None,

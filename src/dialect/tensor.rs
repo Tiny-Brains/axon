@@ -1,9 +1,6 @@
-//! The one thing in the dialect that is not JSON, and it is opaque.
-//!
-//! A tensor is produced by an operator, consumed by an operator, and handed to the graph. A
-//! program can ask its shape and its dtype and nothing else — docs/dialect.md §2. Two things follow:
-//! the operation count is exact arithmetic rather than instrumentation of a general interpreter
-//! walking a 131,072-element array, and a 128x128 plane never enters the value model at all.
+//! The one thing in the dialect that is not JSON, and it is opaque: a tensor is produced by an
+//! operator, consumed by an operator, and handed to the graph. A program can ask its shape and its
+//! dtype and nothing else — docs/dialect.md §2.
 
 use std::fmt;
 
@@ -47,14 +44,9 @@ impl DType {
     }
 }
 
-/// Elements are held as `f64` regardless of dtype, and narrowed on the way out to the graph.
-///
-/// It costs memory — a 128x128 int8 plane is 128 KiB here rather than 16 KiB — and it buys the
-/// thing that matters more: every operator is written once instead of five times, so `tb.stack`
-/// cannot be correct for `int8` and subtly wrong for `float32`. The narrowing happens in exactly
-/// one place, `Tensor::to_bytes`, which is also the only place saturation is defined. When a
-/// profile says this is the cost, a typed backing store is a change behind this struct and
-/// nothing above it moves.
+/// Elements are held as `f64` whatever the dtype and narrowed on the way to the graph. It costs
+/// memory and buys the thing that matters more: every operator is written once instead of five
+/// times, so `tb.stack` cannot be right for `int8` and subtly wrong for `float32`.
 #[derive(Clone)]
 pub struct Tensor {
     pub dtype: DType,
@@ -101,8 +93,12 @@ impl Tensor {
             match self.dtype {
                 DType::I8 => out.push((saturate(v, DType::I8) as i8) as u8),
                 DType::U8 => out.push(saturate(v, DType::U8) as u8),
-                DType::I16 => out.extend_from_slice(&(saturate(v, DType::I16) as i16).to_le_bytes()),
-                DType::I32 => out.extend_from_slice(&(saturate(v, DType::I32) as i32).to_le_bytes()),
+                DType::I16 => {
+                    out.extend_from_slice(&(saturate(v, DType::I16) as i16).to_le_bytes())
+                }
+                DType::I32 => {
+                    out.extend_from_slice(&(saturate(v, DType::I32) as i32).to_le_bytes())
+                }
                 DType::F32 => out.extend_from_slice(&(v as f32).to_le_bytes()),
             }
         }
@@ -110,9 +106,8 @@ impl Tensor {
     }
 }
 
-/// Saturating narrowing, defined here once. An adapter that scatters a 300 into an `int8` plane
-/// gets 127 rather than a wrapped -128 or an error: it is a competitor's arithmetic mistake, it is
-/// theirs to find, and a wrap would hide it inside a plausible number.
+/// Saturating narrowing, defined here once: scattering 300 into an `int8` plane gives 127, not a
+/// wrapped -128, because a wrap would hide a competitor's arithmetic mistake in a plausible number.
 pub fn saturate(v: f64, dtype: DType) -> f64 {
     if v.is_nan() {
         return 0.0;

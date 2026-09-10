@@ -1,16 +1,11 @@
-//! The tensor operators — dialect 1. Twenty-one, plus four metadata helpers: 25 in all.
-//! See `docs/dialect.md` §3; `TENSOR_OPS` below is the normative list.
+//! The tensor operators — dialect 1, `TENSOR_OPS` below being the normative list (docs/dialect.md
+//! §3). Each costs `1 + max(read, produced)`, charged BEFORE the work, so an operator that would
+//! produce a hundred million elements is refused rather than run and then reported.
 //!
-//! Every one costs `1 + max(elements read, elements produced)`: the node's own 1 is charged by the
-//! evaluator, and each operator charges the rest here. The charge happens **before** the work, so
-//! an operator that would produce a hundred million elements is refused rather than run and then
-//! reported — see `docs/design.md` §13.
-//!
-//! **There is no arithmetic here beyond `cast` and `normalise`**, and that is the most important
-//! property in the file. Computation belongs in the graph, where the FLOP cap prices it; an
-//! adapter that could multiply matrices would be a second, unpriced model in front of the priced
-//! one, and a Nano entry could carry a Small policy in its adapter. The line, when an operator is
-//! requested: does it move or reshape information, or does it compute with it?
+//! There is no arithmetic here beyond `cast` and `normalise`. Computation belongs in the graph,
+//! where the FLOP cap prices it; an adapter that could multiply matrices would be a second,
+//! unpriced model in front of the priced one. The test when an operator is proposed: does it move
+//! or reshape information, or does it compute with it?
 
 use std::sync::Arc;
 
@@ -18,8 +13,8 @@ use super::eval::{Ctx, Fault, Res};
 use super::tensor::{saturate, DType, Tensor};
 use super::value::Value;
 
-/// The dialect's operator table. Order is fixed: `digest.rs` hashes it, and a reordering that
-/// changed the digest without changing the meaning would fire a re-validation sweep for nothing.
+/// Order is fixed: `digest.rs` hashes this table, and a reordering would fire a re-validation
+/// sweep for nothing.
 pub const TENSOR_OPS: &[(&str, &str)] = &[
     ("tb.zeros", "(shape, dtype) -> T"),
     ("tb.full", "(shape, dtype, value) -> T"),
@@ -52,7 +47,7 @@ pub fn is_tensor_op(name: &str) -> bool {
     TENSOR_OPS.iter().any(|(n, _)| *n == name)
 }
 
-/// `1 + max(read, produced)`. The evaluator has already charged the node's 1.
+/// The evaluator has already charged the node's own 1.
 fn charge(ctx: &mut Ctx, read: usize, produced: usize) -> Res<()> {
     ctx.charge(read.max(produced) as u64)
 }
@@ -71,16 +66,8 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
             _ => 0.0,
         })),
         "tb.get" => {
-            // Read a path out of an already-evaluated value.
-            //
-            // `var` reads the DOCUMENT. There was no way to read a field out of an expression's
-            // result, and that gap blocked three separate real adapters before it was noticed:
-            // any nested accumulation has to carry its loop-invariants in the accumulator
-            // (because `reduce`'s seed is the only channel from outer scope into a body), and
-            // then it cannot drop them again on the way out. Deriving a visibility mask, and
-            // computing flat indices from a map width, both die exactly there.
-            //
-            // One operator, cost 1, no arithmetic. It moves information; it does not compute.
+            // A path out of an already-evaluated value. `var` reads the document, so without this
+            // an accumulation carrying its loop-invariants cannot drop them again on the way out.
             let v = a.first().cloned().unwrap_or(Value::Null);
             let path = a.get(1).cloned().unwrap_or(Value::Null);
             Ok(super::eval::lookup(&v, &path).unwrap_or(Value::Null))
@@ -122,15 +109,13 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
                     values.len()
                 )));
             }
-            let data = values
-                .iter()
-                .map(|v| v.to_num().map(|x| saturate(x, dt)).unwrap_or(0.0))
-                .collect();
+            let data =
+                values.iter().map(|v| v.to_num().map(|x| saturate(x, dt)).unwrap_or(0.0)).collect();
             Ok(t(Tensor::new(dt, shape, data)))
         }
         "tb.scatter" => {
-            // The natural encoding of `mine`, `foes`, `food`: a list of index lists onto a plane.
-            // `[r, c]` writes `value` (default 1); `[r, c, v]` writes v.
+            // A list of index lists onto a plane: `[r, c]` writes `value` (default 1), `[r, c, v]`
+            // writes v.
             let points = a.first().and_then(Value::as_arr).unwrap_or(&[]);
             let shape = shape(a, 1, op)?;
             let dt = dtype(a, 2, op)?;
@@ -145,10 +130,10 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
                 let mut ok = true;
                 for (d, s) in strides.iter().enumerate() {
                     let c = idx.get(d).and_then(Value::to_num).unwrap_or(-1.0);
+                    // Out of bounds is dropped, not an error: clipping a wrapped coordinate is
+                    // ordinary, and refusing the turn for it would be a strike for arithmetic the
+                    // platform never specified.
                     if c < 0.0 || c as usize >= shape[d] {
-                        // Out of bounds is dropped, not an error: an adapter clipping a wrapped
-                        // coordinate is ordinary, and refusing the turn for it would be a strike
-                        // for arithmetic the platform never specified.
                         ok = false;
                         break;
                     }
@@ -162,7 +147,7 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
             Ok(t(out))
         }
         "tb.rle_expand" => {
-            // The natural encoding of `water`: [v0, n0, v1, n1, ...] row-major.
+            // [v0, n0, v1, n1, ...], row-major.
             let runs = a.first().and_then(Value::as_arr).unwrap_or(&[]);
             let shape = shape(a, 1, op)?;
             let dt = dtype(a, 2, op)?;
@@ -230,7 +215,6 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
                 };
                 let mut shape = base.shape.clone();
                 shape.insert(axis, ts.len());
-                // Stacking on axis 0 is a concatenation of whole tensors; deeper axes interleave.
                 let inner: usize = base.shape[axis..].iter().product();
                 let outer: usize = base.shape[..axis].iter().product();
                 let mut data = Vec::with_capacity(read);
@@ -283,7 +267,7 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
             Ok(Value::arr(out))
         }
         "tb.reshape" => {
-            // A view. It reads nothing and produces nothing, so it costs only its node.
+            // A view: it reads nothing and produces nothing, so it costs only its node.
             let x = tensor(a, 0, op)?;
             let shape = shape(a, 1, op)?;
             if elems(&shape)? != x.len() {
@@ -337,7 +321,8 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
             };
             let n = elems(&shape)?;
             charge(ctx, x.len(), n)?;
-            let fill = if op == "tb.pad" { a.get(3).and_then(Value::to_num).unwrap_or(0.0) } else { 0.0 };
+            let fill =
+                if op == "tb.pad" { a.get(3).and_then(Value::to_num).unwrap_or(0.0) } else { 0.0 };
             let mut data = vec![saturate(fill, x.dtype); n];
             let src_strides = x.strides();
             let dst = Tensor::new(x.dtype, shape.clone(), vec![0.0; n]);
@@ -384,9 +369,8 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
             Ok(t(Tensor::new(dt, x.shape.clone(), data)))
         }
         "tb.normalise" => {
-            // `(x - mean) * scale`, producing float32. On the arithmetic line and allowed across
-            // it because a fixed affine per tensor cannot encode a policy. If a second operator
-            // ever needs this argument, the line has moved and should be redrawn deliberately.
+            // `(x - mean) * scale` to float32. Over the arithmetic line, and allowed because a
+            // fixed affine per tensor cannot encode a policy.
             let x = tensor(a, 0, op)?;
             let mean = num(a, 1, op)?;
             let scale = a.get(2).and_then(Value::to_num).unwrap_or(1.0);
@@ -397,7 +381,6 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
 
         // ------------------------------------------------------------ back to JSON
         "tb.argmax" => {
-            // The inverse of one_hot, and how a policy head becomes moves.
             let x = tensor(a, 0, op)?;
             let axis = num(a, 1, op)?.max(0.0) as usize;
             if axis >= x.rank() {
@@ -414,8 +397,8 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
                     let mut best = 0usize;
                     let mut bestv = f64::NEG_INFINITY;
                     for k in 0..count {
-                        let v = x.data[(o * count + k) * inner + i];
                         // Strictly greater, so the first maximum wins and two machines agree.
+                        let v = x.data[(o * count + k) * inner + i];
                         if v > bestv {
                             bestv = v;
                             best = k;
@@ -452,16 +435,9 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
             Ok(t(Tensor::new(x.dtype, shape, data)))
         }
         "tb.dilate" => {
-            // Mark every cell within euclidean radius^2 of a non-zero cell, on the last two
-            // dimensions. Structure-preserving and fixed: it moves information outward by a
-            // constant geometry and cannot encode a policy, so it is on the same side of §4.6's
-            // line as `scatter` and `rle_expand`.
-            //
-            // It is here because the measurement put it here. `PROTOCOL.md` §8.3 names deriving
-            // visibility as the concrete case the budget must accommodate, and without this the
-            // only expressible form is a 317-pair kernel unrolled per ant -- 30x the cost, for a
-            // program a competitor cannot write correctly on the first attempt (see
-            // tests/ants_adapter.rs).
+            // Every cell within euclidean radius^2 of a non-zero one, on the last two dimensions.
+            // A fixed geometry, so it cannot encode a policy; it exists because deriving a
+            // visibility mask without it costs 30x as much (tests/ants_adapter.rs).
             let x = tensor(a, 0, op)?;
             let r2 = num(a, 1, op)?.max(0.0);
             if x.rank() < 2 {
@@ -483,9 +459,8 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
                         if x.data[base + r * w + c] == 0.0 {
                             continue;
                         }
+                        // The map wraps; a cartridge whose map does not crops afterwards.
                         for (dr, dc) in &offsets {
-                            // The map wraps, as every grid game this operator is for does. A
-                            // cartridge whose map does not wrap crops afterwards.
                             let rr = (r as i64 + dr).rem_euclid(h as i64) as usize;
                             let cc = (c as i64 + dc).rem_euclid(w as i64) as usize;
                             data[base + rr * w + cc] = 1.0;
@@ -555,7 +530,7 @@ fn usizes(a: &[Value], i: usize, op: &str) -> Res<Vec<usize>> {
         .ok_or_else(|| Fault::invalid(format!("'{op}' argument {i} must be a list of numbers")))
 }
 
-/// The element count of a shape, refusing one that would overflow before anything is allocated.
+/// The element count of a shape, refusing an overflow before anything is allocated.
 fn elems(shape: &[usize]) -> Res<usize> {
     let mut n = 1usize;
     for &d in shape {

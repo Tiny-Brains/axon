@@ -8,16 +8,10 @@
 //! eviction   LRU over hold == 0     only under the memory budget, never a model with holds
 //! ```
 //!
-//! Two properties, and they are the reason the table looks like this rather than like a cache:
-//!
-//! **No eviction happens underneath a live match.** A model with a hold is never evicted whatever
-//! the pressure; the budget is enforced at `/load`, by refusing. A wave that has started can
-//! always finish.
-//!
-//! **A crashed replica cannot pin memory forever.** Its holds lapse `idle_ttl_s` after its last
-//! `/play`. Under v2 a wave holds its models for its whole life and releases them at wave end, so
-//! the TTL is the crash backstop only — which is why it is set above the longest match rather than
-//! above a turn.
+//! Two properties make this a hold table rather than a cache. Nothing held is ever evicted, whatever
+//! the pressure — the budget is enforced at `/load`, by refusing, so a wave that started can finish.
+//! And a crashed replica cannot pin memory forever: its holds lapse `idle_ttl_s` after its last
+//! `/play`, which is why the TTL is set above the longest match rather than above a turn.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -64,8 +58,8 @@ impl Residency {
         self.weights.contains_key(weights_hash) && self.adapters.contains_key(adapter_hash)
     }
 
-    /// Advisory, and allowed to be stale — docs/design.md §3.4. What `/resident` answers, and what
-    /// soma/docs/schema.md §4.2's claim orders its candidates by.
+    /// Advisory and allowed to be stale: what `/resident` answers, and what the claim orders its
+    /// candidates by.
     pub fn resident_weights(&self) -> Vec<String> {
         let mut v: Vec<String> = self.weights.keys().cloned().collect();
         v.sort();
@@ -78,7 +72,7 @@ impl Residency {
         v
     }
 
-    /// Touch every model a `/play` row named. This is the keep-alive; there is no separate call.
+    /// The keep-alive: every model a `/play` row named. There is no separate call.
     pub fn touch(&mut self, weights_hash: &str) {
         if let Some(r) = self.weights.get_mut(weights_hash) {
             r.last_touched = Instant::now();
@@ -145,9 +139,7 @@ impl Residency {
         *self.adapter_holds.entry(adapter_hash.to_string()).or_insert(0) += 1;
     }
 
-    /// One hold removed. `false` means there was none, which is `not_held` and is not an error: a
-    /// hold that already lapsed answers it and the caller proceeds. Unloading is idempotent by
-    /// construction.
+    /// One hold removed. `false` is `not_held` rather than an error, so unloading is idempotent.
     pub fn release(&mut self, weights_hash: &str, adapter_hash: &str) -> bool {
         let had = match self.weights.get_mut(weights_hash) {
             Some(r) if r.holds > 0 => {
@@ -158,10 +150,10 @@ impl Residency {
         };
         if let Some(n) = self.adapter_holds.get_mut(adapter_hash) {
             *n = n.saturating_sub(1);
+            // An adapter is cheap to reparse and the memory budget counts only weights, so it
+            // goes at zero holds rather than waiting for pressure.
             if *n == 0 {
                 self.adapter_holds.remove(adapter_hash);
-                // The adapter is cheap to recompile and the graph is not, so an adapter at zero
-                // holds goes now rather than waiting for memory pressure that counts only weights.
                 self.adapters.remove(adapter_hash);
             }
         }
@@ -177,17 +169,11 @@ mod tests {
         Arc::new(Adapter::parse(br#"{"dialect":1,"in":{},"out":{}}"#).unwrap())
     }
 
-    // A Graph needs a real session, so residency's bookkeeping is tested through a fake budget
-    // rather than through real models: what is under test is the hold arithmetic, not ORT.
-    fn fits(r: &mut Residency, n: u64) -> bool {
-        r.make_room_for(n)
-    }
-
     #[test]
     fn a_budget_that_cannot_fit_a_model_refuses_rather_than_evicting_everything() {
         let mut r = Residency::new(100);
-        assert!(fits(&mut r, 100));
-        assert!(!fits(&mut r, 101), "a model larger than the whole budget can never fit");
+        assert!(r.make_room_for(100));
+        assert!(!r.make_room_for(101), "a model larger than the whole budget can never fit");
     }
 
     #[test]

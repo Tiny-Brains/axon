@@ -1,12 +1,6 @@
-# Rust build output.
-#
-# Unlike the cartridge and the plugins, NOTHING BUILT HERE IS COMMITTED: axon is a service, so the
-# binary is produced by whatever builds the image and the ONNX Runtime libraries `ort` downloads
-# are large and platform-specific.
-#
-# What IS committed is `tests/fixtures/` -- the two ONNX models and the worst-case Ants
-# observation. They are small, they are the only reason the tests can measure anything real, and
-# `tests/fixtures/make-model.py` regenerates the models deterministically.
+# Nothing built here is committed: the binary comes from whatever builds the image, and the ONNX
+# Runtime libraries `ort` downloads are large and platform-specific. `tests/fixtures/` IS committed
+# -- `tests/fixtures/make-model.py` regenerates the models deterministically.
 target/
 
 # Local run artifacts

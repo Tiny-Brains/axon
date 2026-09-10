@@ -2,18 +2,18 @@
 //! bytes the test suite uses. Development only.
 //!
 //!     cargo run --release --example dump-fixtures -- /path/to/store
+
 #[path = "../tests/common/mod.rs"]
-#[allow(dead_code)] // the example uses two of the fixtures; the tests use the rest
 mod common;
 
-use axon::store::{DirStore, Kind, Store};
+use axon::store::{digest, DirStore, Kind, Store};
 
 fn main() {
     let dir = std::env::args().nth(1).expect("usage: dump-fixtures <store-dir>");
-    let s = DirStore::new(dir.clone().into());
+    let store = DirStore::new(dir.clone().into());
     let put = |kind, bytes: &[u8]| {
-        let h = axon::store::digest(bytes);
-        s.put(kind, &h, bytes).unwrap();
+        let h = digest(bytes);
+        store.put(kind, &h, bytes).unwrap();
         h
     };
     let out = serde_json::json!({

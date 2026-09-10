@@ -1,5 +1,6 @@
 target/
 tests/
 examples/
+docs/
 .git/
 README.md

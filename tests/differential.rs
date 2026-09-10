@@ -1,25 +1,20 @@
 //! The core subset, through both engines, on every case.
 //!
-//! This is what owning the evaluator costs, and it is worth paying explicitly. Orion evaluates
-//! workflow JSONLogic with `datalogic-rs`; Axon evaluates adapter JSONLogic with its own. Where
-//! the two overlap they must agree, or the platform has two dialects and nobody is told which one
-//! they are writing.
-//!
-//! Divergences are listed, not discovered. There is one.
+//! Orion evaluates workflow JSONLogic with `datalogic-rs`; Axon evaluates adapter JSONLogic with
+//! its own. Where they overlap they must agree, or the platform has two dialects and nobody is
+//! told which one they are writing. Divergences are listed, not discovered. There is one.
 
 use serde_json::{json, Value as J};
 
 fn axon_eval(program: &J, data: &J) -> Result<J, String> {
-    let d = axon::dialect::value::Value::from_json(data);
+    let d = axon::dialect::Value::from_json(data);
     let (out, _ops) = axon::dialect::eval::run(program, &d, 100_000_000);
     out.map(|v| v.to_json()).map_err(|e| e.to_string())
 }
 
 fn datalogic_eval(program: &J, data: &J) -> Result<J, String> {
-    // Templating on, because that is what makes a multi-key object a literal whose values are
-    // evaluated rather than an unknown operator -- and it is how Orion evaluates the object
-    // literals its own workflows build. Without it this comparison would be against a dialect
-    // nobody uses.
+    // Templating on: it is what makes a multi-key object a literal whose values are evaluated,
+    // and it is how Orion evaluates the object literals its own workflows build.
     let engine = datalogic_rs::EngineBuilder::new().with_templating(true).build();
     let ps = program.to_string();
     let compiled = engine.compile(ps.as_str()).map_err(|e| e.to_string())?;
@@ -72,21 +67,49 @@ fn cases() -> Vec<(&'static str, J, J)> {
         ("in-string", json!({"in": ["nt", "ants"]}), obs.clone()),
         ("merge", json!({"merge": [[1, 2], [3]]}), obs.clone()),
         ("map-scalar", json!({"map": [{"var": "mine"}, {"var": "0"}]}), obs.clone()),
-        ("map-object", json!({"map": [{"var": "mine"}, {"r": {"var": "0"}, "c": {"var": "1"}}]}), obs.clone()),
-        ("map-arith", json!({"map": [{"var": "mine"}, {"+": [{"var": "0"}, {"var": "1"}]}]}), obs.clone()),
+        (
+            "map-object",
+            json!({"map": [{"var": "mine"}, {"r": {"var": "0"}, "c": {"var": "1"}}]}),
+            obs.clone(),
+        ),
+        (
+            "map-arith",
+            json!({"map": [{"var": "mine"}, {"+": [{"var": "0"}, {"var": "1"}]}]}),
+            obs.clone(),
+        ),
         ("filter", json!({"filter": [{"var": "mine"}, {">": [{"var": "0"}, 2]}]}), obs.clone()),
-        ("reduce-sum", json!({"reduce": [{"var": "mine"}, {"+": [{"var": "accumulator"}, {"var": "current.0"}]}, 0]}), obs.clone()),
-        ("reduce-seed-from-root", json!({"reduce": [{"var": "mine"}, {"+": [{"var": "accumulator"}, 1]}, {"var": "n"}]}), obs.clone()),
-        ("reduce-flatten", json!({"reduce": [[[1, 2], [3]], {"merge": [{"var": "accumulator"}, {"var": "current"}]}, []]}), obs.clone()),
+        (
+            "reduce-sum",
+            json!({"reduce": [{"var": "mine"}, {"+": [{"var": "accumulator"}, {"var": "current.0"}]}, 0]}),
+            obs.clone(),
+        ),
+        (
+            "reduce-seed-from-root",
+            json!({"reduce": [{"var": "mine"}, {"+": [{"var": "accumulator"}, 1]}, {"var": "n"}]}),
+            obs.clone(),
+        ),
+        (
+            "reduce-flatten",
+            json!({"reduce": [[[1, 2], [3]], {"merge": [{"var": "accumulator"}, {"var": "current"}]}, []]}),
+            obs.clone(),
+        ),
         ("all", json!({"all": [{"var": "mine"}, {">=": [{"var": "0"}, 1]}]}), obs.clone()),
         ("some", json!({"some": [{"var": "mine"}, {">": [{"var": "0"}, 4]}]}), obs.clone()),
         ("none", json!({"none": [{"var": "mine"}, {">": [{"var": "0"}, 9]}]}), obs.clone()),
         ("array-literal", json!([1, {"var": "n"}, 3]), obs.clone()),
         ("object-literal", json!({"a": 1, "b": {"var": "n"}}), obs.clone()),
-        ("nested-map-filter", json!({"map": [{"filter": [{"var": "mine"}, {">": [{"var": "1"}, 2]}]}, {"var": "1"}]}), obs.clone()),
+        (
+            "nested-map-filter",
+            json!({"map": [{"filter": [{"var": "mine"}, {">": [{"var": "1"}, 2]}]}, {"var": "1"}]}),
+            obs.clone(),
+        ),
         // The scope rule: a body cannot reach the outer document. Both must answer null.
         ("map-cannot-see-root", json!({"map": [{"var": "mine"}, {"var": "size"}]}), obs.clone()),
-        ("filter-cannot-see-root", json!({"filter": [{"var": "mine"}, {"var": "flag"}]}), obs.clone()),
+        (
+            "filter-cannot-see-root",
+            json!({"filter": [{"var": "mine"}, {"var": "flag"}]}),
+            obs.clone(),
+        ),
     ]
 }
 
@@ -112,14 +135,9 @@ fn the_core_subset_agrees_with_datalogic() {
 
 #[test]
 fn the_one_deliberate_divergence() {
-    // `{"==": [0, null]}`. JavaScript says false. The JSONLogic specification follows JavaScript.
-    // datalogic-rs says true, and that is what made a workflow join in the wave-turn spike select
-    // the falsy elements and look correct for as long as the value it compared against was zero
-    // (the wave-turn spikeFINDINGS.md §2.6).
-    //
-    // An adapter is the worst place to rediscover that, so this dialect follows the specification.
-    // If this test ever fails because datalogic-rs changed, the divergence is gone and the note in
-    // dialect/mod.rs and value.rs should go with it.
+    // `{"==": [0, null]}`: JavaScript and the JSONLogic specification say false, datalogic-rs says
+    // true. If this test fails because datalogic-rs changed, the divergence is gone and the notes
+    // in dialect/mod.rs and value.rs should go with it.
     let p = json!({"==": [0, null]});
     let d = json!({});
     assert_eq!(axon_eval(&p, &d).unwrap(), json!(false), "axon must follow JavaScript");

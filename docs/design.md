@@ -537,7 +537,7 @@ One block, as the clocks §9 does it. Nothing that names a host, a budget or a s
 | `max_adapter_bytes` | the raw adapter ceiling (§8) | `4 MiB` |
 | `default_idle_ttl_s` | when a `/load` names none; the crash backstop | `900` — above the longest match, not above a turn |
 | `threads` | the ONNX Runtime intra-op pool | cores − 1 |
-| `adapter_threads` | rows evaluated in parallel within one `/play` | cores |
+| `adapter_threads` | rows evaluated in parallel within one `/play` | *not implemented — rows are evaluated serially, so the loader reads no such variable* |
 | `max_in_flight` | concurrent `/play` calls | `1` on a replica, `4` on admission |
 | `store_endpoint`, `store_bucket`, `store_prefix` | the object store and the two prefixes of §7 | from the environment |
 | `store_credential` | read-only on a replica, read-write on admission | from the environment |

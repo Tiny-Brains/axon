@@ -1,12 +1,8 @@
-# Axon — the Model Loader.
+# Axon — the model loader. Holds ONNX weights resident, evaluates each competitor's adapter under an
+# operation count of its own keeping, runs the graph, and answers one call per turn for a whole
+# wave. A second instance of the same binary is the platform's only data path for admission.
 #
-# Holds ONNX weights resident, evaluates each competitor's adapter under an operation count of its
-# own keeping, runs the graph, holds every seat to the turn clock, and answers one call per turn
-# for a whole wave. A second instance of the same binary stands beside Soma and is the platform's
-# only data path for admission.
-#
-# The specification is docs/design.md in the tinybrains design repo. Where this crate
-# and that document disagree, the document is right and this is a bug.
+# docs/design.md is the specification; where this crate and that document disagree, this is a bug.
 [package]
 name = "axon"
 version = "0.1.0"
@@ -14,18 +10,9 @@ edition = "2021"
 publish = false
 license = "Apache-2.0"
 
-[lib]
-name = "axon"
-path = "src/lib.rs"
-
-[[bin]]
-name = "axon"
-path = "src/main.rs"
-
 [dependencies]
-# HMAC-SHA256, for the SigV4 signing chain in src/store.rs. A reviewed implementation rather than
-# twenty lines of our own: this is the one place in the crate where getting the primitive subtly
-# wrong would be both silent and a security bug.
+# A reviewed HMAC-SHA256 for the SigV4 chain in src/store/s3.rs: the one place where getting a
+# primitive subtly wrong would be both silent and a security bug.
 hmac = "0.12"
 ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
 serde = { version = "1", features = ["derive"] }
@@ -36,10 +23,9 @@ ureq = "3"
 zstd = "0.13"
 
 [dev-dependencies]
-# The differential test only. The dialect is NOT built on datalogic-rs -- see src/dialect/mod.rs --
-# but the core JSONLogic subset must agree with it, because it is the engine Orion evaluates
-# workflow logic with and a competitor should not have to learn two dialects. So the test suite
-# runs the same programs through both and asserts equal results.
+# The differential test only. The dialect is not built on datalogic-rs -- see src/dialect/mod.rs --
+# but the core JSONLogic subset must agree with it, because that is the engine Orion evaluates
+# workflow logic with and a competitor should not have to learn two dialects.
 datalogic-rs = { version = "5.4", features = ["templating"] }
 
 [profile.release]

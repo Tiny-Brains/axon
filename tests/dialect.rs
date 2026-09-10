@@ -1,10 +1,14 @@
 //! The counting rules and the operators — docs/dialect.md §3 and §4.4.
 
 use axon::dialect::eval::{run, Fault};
-use axon::dialect::value::Value;
+use axon::dialect::Value;
 use serde_json::json;
 
-fn go(program: serde_json::Value, data: serde_json::Value, budget: u64) -> (Result<Value, Fault>, u64) {
+fn go(
+    program: serde_json::Value,
+    data: serde_json::Value,
+    budget: u64,
+) -> (Result<Value, Fault>, u64) {
     run(&program, &Value::from_json(&data), budget)
 }
 
@@ -16,8 +20,12 @@ fn ok(program: serde_json::Value, data: serde_json::Value) -> (serde_json::Value
 #[test]
 fn every_node_evaluated_costs_one() {
     // Rule 1: applied, not written. The same program over a longer list costs more.
-    let (_, three) = ok(json!({"map": [{"var": "xs"}, {"+": [{"var": ""}, 1]}]}), json!({"xs": [1, 2, 3]}));
-    let (_, six) = ok(json!({"map": [{"var": "xs"}, {"+": [{"var": ""}, 1]}]}), json!({"xs": [1, 2, 3, 4, 5, 6]}));
+    let (_, three) =
+        ok(json!({"map": [{"var": "xs"}, {"+": [{"var": ""}, 1]}]}), json!({"xs": [1, 2, 3]}));
+    let (_, six) = ok(
+        json!({"map": [{"var": "xs"}, {"+": [{"var": ""}, 1]}]}),
+        json!({"xs": [1, 2, 3, 4, 5, 6]}),
+    );
     let body_cost = (six - three) / 3;
     assert_eq!(three + body_cost * 3, six, "cost must be linear in the number of applications");
     assert!(body_cost >= 2, "the body is at least the `+` and its `var`");
@@ -46,10 +54,7 @@ fn a_tensor_operator_costs_one_plus_max_read_produced() {
     // 1 node + 100 produced, plus the nodes for the two literal args and their elements.
     assert!((101..=110).contains(&zeros), "tb.zeros on 100 elements cost {zeros}");
 
-    let (_, argmax) = ok(
-        json!({"tb.argmax": [{"tb.zeros": [[20, 5], "float32"]}, 1]}),
-        json!({}),
-    );
+    let (_, argmax) = ok(json!({"tb.argmax": [{"tb.zeros": [[20, 5], "float32"]}, 1]}), json!({}));
     let (_, zeros100) = ok(json!({"tb.zeros": [[20, 5], "float32"]}), json!({}));
     // argmax reads 100 and produces 20, so it is charged the larger: its own node, the 100, and
     // the axis literal, which is a node too.
@@ -58,10 +63,7 @@ fn a_tensor_operator_costs_one_plus_max_read_produced() {
 
 #[test]
 fn reshape_is_a_view_and_costs_one() {
-    let (_, with) = ok(
-        json!({"tb.reshape": [{"tb.zeros": [[10, 10], "int8"]}, [100]]}),
-        json!({}),
-    );
+    let (_, with) = ok(json!({"tb.reshape": [{"tb.zeros": [[10, 10], "int8"]}, [100]]}), json!({}));
     let (_, without) = ok(json!({"tb.zeros": [[10, 10], "int8"]}), json!({}));
     assert_eq!(with - without, 3, "reshape is its node plus its shape literal, not its elements");
 }
@@ -124,30 +126,47 @@ fn a_tensor_is_opaque_to_a_program() {
 
 #[test]
 fn the_operators_do_what_they_say() {
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.scatter": [[[0, 1], [1, 0]], [2, 2], "int8"]}]}), json!({}));
+    let (v, _) =
+        ok(json!({"tb.to_list": [{"tb.scatter": [[[0, 1], [1, 0]], [2, 2], "int8"]}]}), json!({}));
     assert_eq!(v, json!([[0, 1], [1, 0]]));
 
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.rle_expand": [[0, 2, 1, 2], [2, 2], "int8"]}]}), json!({}));
+    let (v, _) =
+        ok(json!({"tb.to_list": [{"tb.rle_expand": [[0, 2, 1, 2], [2, 2], "int8"]}]}), json!({}));
     assert_eq!(v, json!([[0, 0], [1, 1]]));
 
     let (v, _) = ok(json!({"tb.to_list": [{"tb.one_hot": [[0, 2], 3, "int8"]}]}), json!({}));
     assert_eq!(v, json!([[1, 0, 0], [0, 0, 1]]));
 
-    let (v, _) = ok(json!({"tb.argmax": [{"tb.tensor": [[1, 9, 3, 8, 2, 7], [2, 3], "float32"]}, 1]}), json!({}));
+    let (v, _) = ok(
+        json!({"tb.argmax": [{"tb.tensor": [[1, 9, 3, 8, 2, 7], [2, 3], "float32"]}, 1]}),
+        json!({}),
+    );
     assert_eq!(v, json!([1, 0]));
 
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.transpose": [{"tb.tensor": [[1, 2, 3, 4, 5, 6], [2, 3], "int8"]}, [1, 0]]}]}), json!({}));
+    let (v, _) = ok(
+        json!({"tb.to_list": [{"tb.transpose": [{"tb.tensor": [[1, 2, 3, 4, 5, 6], [2, 3], "int8"]}, [1, 0]]}]}),
+        json!({}),
+    );
     assert_eq!(v, json!([[1, 4], [2, 5], [3, 6]]));
 
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.pad": [{"tb.tensor": [[1, 2, 3, 4], [2, 2], "int8"]}, [1, 1], [0, 0], 9]}]}), json!({}));
+    let (v, _) = ok(
+        json!({"tb.to_list": [{"tb.pad": [{"tb.tensor": [[1, 2, 3, 4], [2, 2], "int8"]}, [1, 1], [0, 0], 9]}]}),
+        json!({}),
+    );
     assert_eq!(v, json!([[9, 9, 9], [9, 1, 2], [9, 3, 4]]));
 
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.gather": [{"tb.tensor": [[1, 2, 3, 4, 5, 6], [3, 2], "int8"]}, [2, 0], 0]}]}), json!({}));
+    let (v, _) = ok(
+        json!({"tb.to_list": [{"tb.gather": [{"tb.tensor": [[1, 2, 3, 4, 5, 6], [3, 2], "int8"]}, [2, 0], 0]}]}),
+        json!({}),
+    );
     assert_eq!(v, json!([[5, 6], [1, 2]]));
 
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.stack": [[
+    let (v, _) = ok(
+        json!({"tb.to_list": [{"tb.stack": [[
         {"tb.tensor": [[1, 2], [2], "int8"]},
-        {"tb.tensor": [[3, 4], [2], "int8"]}], 0, "int8"]}]}), json!({}));
+        {"tb.tensor": [[3, 4], [2], "int8"]}], 0, "int8"]}]}),
+        json!({}),
+    );
     assert_eq!(v, json!([[1, 2], [3, 4]]));
 }
 
@@ -155,7 +174,8 @@ fn the_operators_do_what_they_say() {
 fn narrowing_saturates_rather_than_wrapping() {
     // A competitor scattering 300 into an int8 plane gets 127. A wrap would hide their arithmetic
     // mistake inside a plausible number.
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.tensor": [[300, -300, 5], [3], "int8"]}]}), json!({}));
+    let (v, _) =
+        ok(json!({"tb.to_list": [{"tb.tensor": [[300, -300, 5], [3], "int8"]}]}), json!({}));
     assert_eq!(v, json!([127, -128, 5]));
 }
 
@@ -163,7 +183,10 @@ fn narrowing_saturates_rather_than_wrapping() {
 fn a_scatter_outside_the_plane_is_dropped_not_fatal() {
     // An adapter clipping a wrapped coordinate is ordinary; refusing the turn for it would be a
     // strike for arithmetic the platform never specified.
-    let (v, _) = ok(json!({"tb.to_list": [{"tb.scatter": [[[0, 0], [9, 9], [-1, 0]], [2, 2], "int8"]}]}), json!({}));
+    let (v, _) = ok(
+        json!({"tb.to_list": [{"tb.scatter": [[[0, 0], [9, 9], [-1, 0]], [2, 2], "int8"]}]}),
+        json!({}),
+    );
     assert_eq!(v, json!([[1, 0], [0, 0]]));
 }
 
@@ -176,10 +199,9 @@ fn division_by_zero_is_null_rather_than_a_refused_turn() {
 #[test]
 fn the_two_directions_are_checked_at_their_boundaries() {
     use axon::dialect::Adapter;
-    let a = Adapter::parse(
-        br#"{"dialect": 1, "in": {"x": 1}, "out": {"tb.zeros": [[2], "int8"]}}"#,
-    )
-    .unwrap();
+    let a =
+        Adapter::parse(br#"{"dialect": 1, "in": {"x": 1}, "out": {"tb.zeros": [[2], "int8"]}}"#)
+            .unwrap();
 
     // `in` must produce tensors.
     let (r, _) = a.run_in(&json!({}), 100_000);
@@ -188,6 +210,15 @@ fn the_two_directions_are_checked_at_their_boundaries() {
     // `out` must not.
     let (r, _) = a.run_out(vec![], &json!({}), 100_000);
     assert!(r.unwrap_err().to_string().contains("must be JSON"));
+}
+
+#[test]
+fn an_operator_with_no_arguments_is_answered_rather_than_panicking() {
+    // Every operator is reachable with an empty argument list from a competitor's adapter.
+    for op in axon::dialect::eval::CORE {
+        let (r, _) = go(json!({ *op: [] }), json!({}), 100_000);
+        assert!(r.is_ok() || r.unwrap_err().code() == "ADAPTER_INVALID", "'{op}' on no arguments");
+    }
 }
 
 #[test]

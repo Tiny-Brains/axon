@@ -1,9 +1,7 @@
-//! A real ONNX model, a real adapter, a real observation, through the real seam.
-//!
-//! Everything before this tested a piece. This tests that docs/design.md §3 is a thing that works:
-//! `/load` fetches by hash and verifies, `/play` runs adapter → graph → adapter under a deadline,
-//! `/resident` answers what the claim's affinity ordering needs, `/unload` is idempotent, and both
-//! classes of refusal come back with the `fault` field kalam/docs/design.md branches on.
+//! A real ONNX model, a real adapter, a real observation, through the real seam: `/load` fetches
+//! by hash and verifies, `/play` runs adapter → graph → adapter under a deadline, `/resident`
+//! answers what the claim's affinity ordering needs, `/unload` is idempotent, and both classes of
+//! refusal carry the `fault` field Kalam branches on.
 
 mod common;
 
@@ -28,7 +26,7 @@ fn a_wave_loads_plays_and_unloads() {
     assert_eq!(r.dialect_version, 1);
     assert!(r.evaluator_digest.starts_with("sha256:"));
 
-    // ---- /resident: what soma/docs/schema.md §4.2's claim orders its candidates by
+    // ---- /resident: what the claim orders its candidates by
     let res = axon.resident();
     assert_eq!(res.weights, vec![f.weights_hash.clone()]);
     assert_eq!(res.adapters, vec![f.adapter_hash.clone()]);
@@ -68,7 +66,7 @@ fn a_wave_loads_plays_and_unloads() {
 }
 
 #[test]
-fn the_two_classes_of_refusal_carry_the_field_layer_03_branches_on() {
+fn the_two_classes_of_refusal_carry_the_field_kalam_branches_on() {
     let f = Fixture::new("refusals");
     let axon = Axon::new(f.config(Mode::Replica));
 
@@ -100,9 +98,9 @@ fn the_two_classes_of_refusal_carry_the_field_layer_03_branches_on() {
 fn corrupt_bytes_in_the_store_are_the_models_fault_and_are_named() {
     use axon::store::{DirStore, Kind, Store};
     let f = Fixture::new("corrupt");
-    // Put bytes under a key that is not their hash. On a replica this means the store is corrupt;
-    // it is a `model` fault nonetheless, because the row can never be played and failing it with a
-    // named reason beats looping it through refusals to the same end.
+    // Bytes under a key that is not their hash. On a replica that means the store is corrupt, and
+    // it is a `model` fault nonetheless: the row can never be played, so failing it with a named
+    // reason beats looping it through refusals to the same end.
     let liar = format!("sha256:{}", "c".repeat(64));
     DirStore::new(f.dir.clone()).put(Kind::Weights, &liar, b"not an onnx file").unwrap();
 
@@ -181,7 +179,7 @@ fn admission_inspects_and_validates_and_does_not_play() {
     assert!(ins.ops.contains(&"Conv".to_string()));
     assert!(ins.size_metric_bytes > 0);
     assert_eq!(ins.weights_zstd_bytes + ins.adapter_zstd_bytes, ins.size_metric_bytes);
-    // Micro is <= 64 KiB compressed -- the platform design §5. The class table is jodi/docs/admission.md's to apply.
+    // Micro is <= 64 KiB compressed. The class table is jodi's to apply.
     assert!(ins.size_metric_bytes < 64 * 1024, "S = {}", ins.size_metric_bytes);
     let names: Vec<&str> = ins.inputs.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, vec!["board", "ant_r", "ant_c"]);
@@ -208,9 +206,9 @@ fn admission_inspects_and_validates_and_does_not_play() {
         ins.size_metric_bytes, ins.params, ins.opset, val.ops_max, val.flops_max
     );
 
-    // ---- and it does not play. A trial is an ordinary row that Kalam claims first.
+    // The mode check is in the HTTP layer; the call itself is harmless.
     let play: PlayRequest = serde_json::from_value(json!({"rows": []})).unwrap();
-    let _ = axon.play(play); // the mode check is in the HTTP layer; the call itself is harmless
+    let _ = axon.play(play);
 }
 
 #[test]
@@ -237,7 +235,7 @@ fn validate_refuses_an_adapter_that_does_not_feed_the_graph() {
 
 #[test]
 fn validate_with_no_reference_observations_is_refused_rather_than_passing_vacuously() {
-    // The requirement docs/design.md §3.6 places on jodi/docs/admission.md: a gate that tests nothing is not a gate.
+    // A gate that tests nothing is not a gate.
     let f = Fixture::new("noobs");
     let axon = Axon::new(f.config(Mode::Admission));
     axon.load(load_req(vec![f.model_ref()]));
@@ -249,13 +247,10 @@ fn validate_with_no_reference_observations_is_refused_rather_than_passing_vacuou
 
 #[test]
 fn the_batchable_model_answers_the_same_moves_one_inference_at_a_time() {
-    // the platform design §7: "one batched inference per distinct model" is "the economics a code-
-    // submission challenge can never have". This is that claim, tested.
-    //
-    // Two models, the same trunk and the same weights. `ants-micro` takes ragged per-ant inputs
-    // and declares a leading dimension of 1, so every seat is its own inference. `ants-dense`
-    // takes only the board, declares a dynamic batch, and answers a dense policy map that the
-    // adapter gathers per ant on the way back — so a whole wave is one inference.
+    // One batched inference per distinct model, tested. `ants-micro` takes ragged per-ant inputs
+    // and declares a leading dimension of 1, so every seat is its own inference; `ants-dense` takes
+    // only the board, declares a dynamic batch, and answers a dense policy map the adapter gathers
+    // per ant on the way back, so a whole wave is one inference.
     let f = Fixture::new("batch");
     let axon = Axon::new(f.config(Mode::Replica));
     assert_eq!(axon.load(load_req(vec![f.dense_ref()])).models[0].state, "resident");
@@ -268,9 +263,10 @@ fn the_batchable_model_answers_the_same_moves_one_inference_at_a_time() {
                    "observation": obs, "ref": {"seat": i}})
         })
         .collect();
-    let play: PlayRequest =
-        serde_json::from_value(json!({"rows": rows, "deadline_ms": 10_000, "budget_ops": 2_000_000}))
-            .unwrap();
+    let play: PlayRequest = serde_json::from_value(
+        json!({"rows": rows, "deadline_ms": 10_000, "budget_ops": 2_000_000}),
+    )
+    .unwrap();
     let reply = axon.play(play);
 
     for (i, row) in reply.rows.iter().enumerate() {
@@ -324,12 +320,15 @@ fn a_batch_gives_each_row_its_own_answer() {
 
     let rows: Vec<serde_json::Value> = observations
         .iter()
-        .map(|o| json!({"weights_hash": f.dense_weights_hash,
-                        "adapter_hash": f.dense_adapter_hash, "observation": o}))
+        .map(|o| {
+            json!({"weights_hash": f.dense_weights_hash,
+                        "adapter_hash": f.dense_adapter_hash, "observation": o})
+        })
         .collect();
-    let play: PlayRequest =
-        serde_json::from_value(json!({"rows": rows, "deadline_ms": 10_000, "budget_ops": 2_000_000}))
-            .unwrap();
+    let play: PlayRequest = serde_json::from_value(
+        json!({"rows": rows, "deadline_ms": 10_000, "budget_ops": 2_000_000}),
+    )
+    .unwrap();
     let batched = axon.play(play);
 
     for (i, row) in batched.rows.iter().enumerate() {
@@ -343,11 +342,6 @@ fn a_batch_gives_each_row_its_own_answer() {
     assert!(alone[0] != alone[1], "the fixture must actually differ between rows");
 }
 
-// ---------------------------------------------------------------- what jodi/docs/admission.md asked for
-//
-// Three additions, each one a thing admission cannot do without. They are tested here rather than
-// beside the calls they belong to because each is only meaningful in the admission role.
-
 #[test]
 fn inspect_returns_the_adapters_exact_bytes_so_the_schemas_check_can_hold() {
     let f = Fixture::new("inspect-adapter");
@@ -356,10 +350,9 @@ fn inspect_returns_the_adapters_exact_bytes_so_the_schemas_check_can_hold() {
 
     let ins = axon.inspect(serde_json::from_value(f.model_ref()).unwrap()).expect("inspect");
 
-    // THIS IS THE WHOLE POINT, and it is why the reply carries text rather than a parsed document.
-    // `models.adapter` stores what comes back here, and `models_adapter_matches_hash` recomputes
-    // sha256 over the stored text -- so anything but the exact fetched bytes makes the verdict
-    // statement fail a CHECK constraint rather than admit a version.
+    // Why the reply carries text rather than a parsed document: `models.adapter` stores what comes
+    // back here under a CHECK that recomputes sha256 over it, so anything but the exact fetched
+    // bytes fails the constraint instead of admitting a version.
     assert_eq!(common::sha256(ins.adapter.as_bytes()), f.adapter_hash);
     assert_eq!(ins.adapter_raw_bytes as usize, ins.adapter.len());
 }
@@ -392,9 +385,8 @@ fn a_missing_release_asset_is_the_models_fault_and_is_named() {
         "adapter_url": format!("http://{addr}/adapter.json")})]);
     let r = axon.load(req);
 
-    // Before jodi/docs/admission.md asked, this was FETCH_FAILED with fault `loader` -- which admission retries.
-    // A competitor who forgot to attach the file would have got three silent retries and then
-    // TIMED_OUT, the least actionable message on the platform.
+    // Not FETCH_FAILED with fault `loader`, which admission retries: a competitor who forgot to
+    // attach the file would get three silent retries and then TIMED_OUT.
     assert_eq!(r.models[0].state, "refused");
     assert_eq!(r.models[0].reason, Some("ASSET_MISSING"));
     assert_eq!(r.models[0].fault, Some("model"));

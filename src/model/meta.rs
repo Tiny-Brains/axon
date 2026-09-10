@@ -1,15 +1,9 @@
-//! The static facts `/inspect` reports, read straight out of the ONNX protobuf.
+//! The static facts `/inspect` reports, read straight out of the ONNX protobuf: `ort` runs a graph,
+//! it does not describe one.
 //!
-//! `ort` runs a graph; it does not describe one. `/inspect` has to answer the opset, the operators
-//! used, the parameter count and the compressed size of the initializer data — none of which the
-//! runtime exposes.
-//!
-//! So this walks the wire format. It is not a protobuf implementation and does not need to be: a
-//! length-delimited message can be scanned for the handful of field numbers that matter without
-//! knowing the schema of anything else, and every unknown field is skipped by its wire type. That
-//! is ~100 lines and no dependency, against a `prost` build and a generated `onnx.proto` that has
-//! to track the spec. The cost is that it is tied to four field numbers, which are listed here and
-//! have not changed since ONNX 1.0.
+//! This walks the wire format rather than generating a schema — a length-delimited message can be
+//! scanned for the handful of field numbers that matter, skipping every unknown field by its wire
+//! type. The cost is the dependence on those field numbers, which have not changed since ONNX 1.0.
 //!
 //! ```text
 //! ModelProto   .7  graph (GraphProto)      .8  opset_import (OperatorSetIdProto)
@@ -26,8 +20,7 @@ pub struct GraphFacts {
     pub opset: i64,
     pub ops: BTreeSet<String>,
     pub params: u64,
-    /// The concatenated initializer payloads — the platform design §5's "model initializer tensor data",
-    /// which is the thing the size metric compresses. Weights, not the file.
+    /// The concatenated initializer payloads: what the size metric compresses. Weights, not file.
     pub initializer_bytes: Vec<u8>,
 }
 
@@ -64,9 +57,9 @@ impl<'a> Reader<'a> {
         self.at += n;
         Some(s)
     }
-    /// The next field's number, with its payload already consumed. `None` at the end or on
-    /// anything malformed — a truncated file reports what it managed to read rather than failing,
-    /// because `/inspect`'s caller wants to know it is broken, not to get a parse error.
+    /// The next field's number, with its payload consumed. `None` at the end or on anything
+    /// malformed: a truncated file reports what it read, because `/inspect`'s caller wants to know
+    /// the file is broken, not to get a parse error.
     fn field(&mut self) -> Option<(u64, Field<'a>)> {
         let key = self.varint()?;
         let (num, wire) = (key >> 3, key & 7);
@@ -74,24 +67,29 @@ impl<'a> Reader<'a> {
             num,
             match wire {
                 0 => Field::Varint(self.varint()?),
-                1 => Field::Fixed(self.bytes(8)?),
+                1 => {
+                    self.bytes(8)?;
+                    Field::Fixed
+                }
                 2 => {
                     let n = self.varint()? as usize;
                     Field::Len(self.bytes(n)?)
                 }
-                5 => Field::Fixed(self.bytes(4)?),
+                5 => {
+                    self.bytes(4)?;
+                    Field::Fixed
+                }
                 _ => return None,
             },
         ))
     }
 }
 
-#[allow(dead_code)]
 enum Field<'a> {
     Varint(u64),
     Len(&'a [u8]),
-    /// Read to skip the payload; the value is never needed, since no field this scans is fixed-width.
-    Fixed(&'a [u8]),
+    /// Consumed and discarded: no field this scans is fixed-width.
+    Fixed,
 }
 
 impl<'a> Field<'a> {
@@ -120,11 +118,10 @@ pub fn read(model: &[u8]) -> GraphFacts {
                     read_graph(g, &mut f);
                 }
             }
+            // The default domain's version is the opset. A model carrying several imports reports
+            // the largest, which is what a reader means by "the opset".
             8 => {
                 if let Some(o) = val.len() {
-                    // The default domain's version is the opset the platform pins. A model
-                    // carrying several imports reports the largest, which is what a reader means
-                    // by "the opset".
                     let mut rr = Reader::new(o);
                     let mut domain_is_default = true;
                     let mut version = 0i64;
@@ -200,7 +197,7 @@ fn read_initializer(t: &[u8], f: &mut GraphFacts) {
                         }
                     }
                 }
-                Field::Fixed(_) => {}
+                Field::Fixed => {}
             },
             9 => {
                 if let Some(raw) = val.len() {
@@ -214,8 +211,7 @@ fn read_initializer(t: &[u8], f: &mut GraphFacts) {
     f.params = f.params.saturating_add(if any_dim { count } else { 1 });
 }
 
-/// the platform design §5's size metric, both terms:
-/// `S = len(zstd-19(initializer data)) + len(zstd-19(adapter))`.
+/// The size metric, both terms: `S = len(zstd-19(initializer data)) + len(zstd-19(adapter))`.
 pub fn size_metric(initializer_bytes: &[u8], adapter: &[u8]) -> (usize, usize, usize) {
     let w = zstd::encode_all(initializer_bytes, 19).map(|v| v.len()).unwrap_or(0);
     let a = zstd::encode_all(adapter, 19).map(|v| v.len()).unwrap_or(0);
@@ -226,7 +222,7 @@ pub fn size_metric(initializer_bytes: &[u8], adapter: &[u8]) -> (usize, usize, u
 mod tests {
     use super::*;
 
-    const MODEL: &[u8] = include_bytes!("../tests/fixtures/ants-micro.onnx");
+    const MODEL: &[u8] = include_bytes!("../../tests/fixtures/ants-micro.onnx");
 
     #[test]
     fn it_reads_a_real_model() {
@@ -243,13 +239,14 @@ mod tests {
         // 6653 fp32 parameters is ~26 KB raw; random weights barely compress, so the metric
         // should land in the same order and inside the Micro class's 64 KiB.
         assert!((10_000..64 * 1024).contains(&w), "compressed initializers were {w} bytes");
-        println!("\nfixture: opset {} · {} params · S={s} (weights {w}, adapter {a})\n  ops: {:?}",
-                 f.opset, f.params, f.ops);
+        println!(
+            "\nfixture: opset {} · {} params · S={s} (weights {w}, adapter {a})\n  ops: {:?}",
+            f.opset, f.params, f.ops
+        );
     }
 
     #[test]
     fn a_truncated_model_reports_what_it_read_rather_than_failing() {
-        // /inspect's caller wants to know a file is broken, not to get a parse error.
         let f = read(&MODEL[..MODEL.len() / 2]);
         assert!(f.params < 6653);
         let _ = read(b"not a protobuf at all");

@@ -1,12 +1,8 @@
-//! S3Store against a real S3 implementation — devops/docs/deployment.md §8.1.
+//! S3Store against a real S3 implementation. The unit tests check the signature against an
+//! independent implementation; what they cannot check is whether a real server ACCEPTS it.
 //!
-//! Signing is checked against an independent implementation in the unit tests; what those cannot
-//! check is whether a real server ACCEPTS the signature, which is a different question and the one
-//! that matters. So this drives the local stack's MinIO, which is the same S3 surface R2 presents
-//! and the same one `devops/loader/run.sh` already signs against with curl.
-//!
-//! **Skipped, loudly, when the stack is not up.** A test that silently passes when its subject is
-//! absent is worse than no test: it reports green for a store nobody exercised.
+//! Skipped loudly when the stack is not up — a test that silently passes when its subject is absent
+//! reports green for a store nobody exercised.
 //!
 //!   docker compose up -d minio     # from devops/
 //!   AXON_S3_LIVE=1 cargo test --test s3_live -- --nocapture
@@ -48,8 +44,8 @@ fn a_real_s3_accepts_our_signature_and_round_trips() {
 #[test]
 fn a_missing_object_is_not_found_rather_than_unavailable() {
     let Some(s) = store() else { return };
-    // The distinction is load-bearing: NotFound is a competitor's asset never mirrored, and
-    // Unavailable is the store being down. Admission rejects on one and retries on the other.
+    // Load-bearing: NotFound is an asset never mirrored, Unavailable is the store being down, and
+    // admission rejects on one and retries on the other.
     let h = format!("sha256:{}", "b".repeat(64));
     assert!(matches!(s.get(Kind::Weights, &h), Err(StoreError::NotFound)));
 }
@@ -67,8 +63,8 @@ fn a_bad_secret_is_unavailable_not_not_found() {
         "the-wrong-secret".into(),
     );
     let h = format!("sha256:{}", "c".repeat(64));
-    // A signature mismatch is a 403, which must not be mistaken for "the competitor never
-    // uploaded this" -- that would reject a good submission for a credential problem.
+    // A 403 must not be mistaken for "never uploaded", which would reject a good submission for a
+    // credential problem.
     match s.get(Kind::Weights, &h) {
         Err(StoreError::Unavailable(_)) => {}
         other => panic!("expected Unavailable for a bad signature, got {other:?}"),

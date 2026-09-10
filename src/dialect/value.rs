@@ -1,17 +1,9 @@
-//! The dialect's value model: JSON, plus one thing JSON does not have.
+//! JSON plus the one thing JSON does not have: an opaque tensor, which can live inside an array
+//! (`tb.stack` takes a list of them) or an object (an `in` program answers `{input_name: tensor}`).
+//! That is why this exists rather than `serde_json::Value` being used directly.
 //!
-//! A program in this dialect works over ordinary JSON — the observation going in, the action
-//! coming out — with exactly one addition: a **tensor**, which is opaque. A program can produce
-//! one, pass it to another operator, and ask its shape or its dtype. It cannot see an element.
-//!
-//! That is docs/dialect.md §2, and it is why this file exists rather than `serde_json::Value` being
-//! used directly: a tensor has to be able to live inside an array (`tb.stack` takes a list of
-//! them) and inside an object (an `in` program's result is `{input_name: tensor}`), and
-//! `serde_json::Value` has no room for one.
-//!
-//! Objects preserve insertion order and are backed by a `Vec`. Adapters build objects with a
-//! handful of keys — the graph's input names — so linear lookup is faster than a map and the
-//! ordering is one less thing that can differ between two machines.
+//! Objects keep insertion order and are backed by a `Vec`: adapters build objects with a handful of
+//! keys, so linear lookup beats a map and the ordering cannot differ between two machines.
 
 use std::fmt;
 use std::sync::Arc;
@@ -59,13 +51,6 @@ impl Value {
         }
     }
 
-    pub fn index(&self, i: usize) -> Option<&Value> {
-        match self {
-            Value::Arr(a) => a.get(i),
-            _ => None,
-        }
-    }
-
     pub fn as_arr(&self) -> Option<&[Value]> {
         match self {
             Value::Arr(a) => Some(a),
@@ -87,9 +72,8 @@ impl Value {
         }
     }
 
-    /// JSONLogic truthiness, and it is not Rust's. Empty string, empty array, `0` and `null` are
-    /// all falsy; an empty **object** is truthy, which is the one people get wrong. A tensor is
-    /// always truthy — it exists.
+    /// JSONLogic truthiness: empty string, empty array, `0` and `null` are falsy; an empty object
+    /// is truthy, which is the one people get wrong. A tensor exists, so it is truthy.
     pub fn truthy(&self) -> bool {
         match self {
             Value::Null => false,
@@ -102,8 +86,8 @@ impl Value {
         }
     }
 
-    /// Numeric coercion for arithmetic and comparison. `null` is 0, `true` is 1, a numeric string
-    /// is its number; anything else has no number and the caller decides what that means.
+    /// `null` is 0, `true` is 1, a numeric string is its number; anything else has no number and
+    /// the caller decides what that means.
     pub fn to_num(&self) -> Option<f64> {
         match self {
             Value::Null => Some(0.0),
@@ -154,14 +138,10 @@ impl Value {
         }
     }
 
-    /// Loose equality — `==`. JSONLogic's, which is JavaScript's, which is a minefield.
-    ///
-    /// The one that matters here is that **`null` equals only `null` and `undefined`** — it does
-    /// NOT equal `0` or `""`. The spike found an engine where `{"==": [0, null]}` was true, and a
-    /// join written against an unresolvable path therefore selected the falsy elements and looked
-    /// correct for as long as the value it was compared against was zero
-    /// (`03-spike/FINDINGS.md` §2.6). A competitor's adapter is exactly the place that trap would
-    /// be discovered by accident and never diagnosed, so this dialect follows JavaScript instead.
+    /// Loose equality — `==`, JavaScript's. The rule that matters: `null` equals only `null`, not
+    /// `0` or `""`. `datalogic-rs` answers true for `{"==": [0, null]}`, which makes a comparison
+    /// against an unresolvable path select the falsy elements and look right for as long as the
+    /// other side is zero. `tests/differential.rs` pins the divergence.
     pub fn loose_eq(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::Null, Value::Null) => true,
@@ -213,18 +193,15 @@ impl Value {
         }
     }
 
-    /// Back to JSON. A tensor has no JSON form and becomes `null` — which is unreachable for a
-    /// program's *result*, because both directions are checked before they are handed on: an `in`
-    /// program must produce tensors and an `out` program must not.
+    /// Back to JSON. A tensor has no JSON form and becomes `null`, unreachable for a program's
+    /// result because both directions are checked before they are handed on.
     pub fn to_json(&self) -> serde_json::Value {
         match self {
             Value::Null => serde_json::Value::Null,
             Value::Bool(b) => serde_json::Value::Bool(*b),
-            // An integral value renders as a JSON integer, not `3.0`. This is not cosmetic: the
-            // action is canonically serialized for the determinism audit (ants/docs/protocol.md §3 rule 2)
-            // and RFC 8785 renders an integral number without a fraction, so emitting `20.0` where
-            // a game expects `20` is a different document with a different hash. Caught by the
-            // differential test, which is exactly the kind of thing it is for.
+            // An integral value renders as a JSON integer, not `3.0`: the action is canonically
+            // serialized for the determinism audit, and RFC 8785 writes an integral number without
+            // a fraction, so `20.0` where a game expects `20` hashes differently.
             Value::Num(n) => {
                 if n.is_finite() && n.fract() == 0.0 && n.abs() < 9.007_199_254_740_992e15 {
                     serde_json::Value::Number(serde_json::Number::from(*n as i64))
