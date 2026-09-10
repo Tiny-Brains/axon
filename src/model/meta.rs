@@ -154,10 +154,10 @@ fn read_graph(g: &[u8], f: &mut GraphFacts) {
                     let mut rr = Reader::new(node);
                     while !rr.done() {
                         let Some((n, v)) = rr.field() else { break };
-                        if n == 4 {
-                            if let Some(op) = v.len().and_then(|b| std::str::from_utf8(b).ok()) {
-                                f.ops.insert(op.to_string());
-                            }
+                        if n == 4
+                            && let Some(op) = v.len().and_then(|b| std::str::from_utf8(b).ok())
+                        {
+                            f.ops.insert(op.to_string());
                         }
                     }
                 }

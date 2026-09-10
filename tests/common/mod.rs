@@ -6,8 +6,8 @@
 // Each test binary uses a subset of these.
 #![allow(dead_code)]
 
-use axon::store::{digest, DirStore, Kind, Store};
-use serde_json::{json, Value as J};
+use axon::store::{DirStore, Kind, Store, digest};
+use serde_json::{Value as J, json};
 
 pub const OBS: &str = include_str!("../fixtures/ants-observation.json");
 pub const MODEL: &[u8] = include_bytes!("../fixtures/ants-micro.onnx");

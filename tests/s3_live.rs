@@ -7,7 +7,7 @@
 //!   docker compose up -d minio     # from devops/
 //!   AXON_S3_LIVE=1 cargo test --test s3_live -- --nocapture
 
-use axon::store::{digest, Kind, S3Store, Store, StoreError};
+use axon::store::{Kind, S3Store, Store, StoreError, digest};
 
 fn store() -> Option<S3Store> {
     if std::env::var("AXON_S3_LIVE").is_err() {

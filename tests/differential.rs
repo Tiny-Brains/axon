@@ -4,7 +4,7 @@
 //! its own. Where they overlap they must agree, or the platform has two dialects and nobody is
 //! told which one they are writing. Divergences are listed, not discovered. There is one.
 
-use serde_json::{json, Value as J};
+use serde_json::{Value as J, json};
 
 fn axon_eval(program: &J, data: &J) -> Result<J, String> {
     let d = axon::dialect::Value::from_json(data);

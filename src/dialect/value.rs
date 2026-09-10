@@ -95,11 +95,7 @@ impl Value {
             Value::Num(n) => Some(*n),
             Value::Str(s) => {
                 let t = s.trim();
-                if t.is_empty() {
-                    Some(0.0)
-                } else {
-                    t.parse::<f64>().ok()
-                }
+                if t.is_empty() { Some(0.0) } else { t.parse::<f64>().ok() }
             }
             _ => None,
         }

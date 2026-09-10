@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use super::ops;
-use super::value::{fmt_num, Value};
+use super::value::{Value, fmt_num};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fault {
@@ -67,11 +67,7 @@ impl Ctx {
     #[inline]
     pub fn charge(&mut self, n: u64) -> Res<()> {
         self.ops = self.ops.saturating_add(n);
-        if self.ops > self.budget {
-            Err(Fault::OverBudget { budget: self.budget })
-        } else {
-            Ok(())
-        }
+        if self.ops > self.budget { Err(Fault::OverBudget { budget: self.budget }) } else { Ok(()) }
     }
 }
 
@@ -215,11 +211,7 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
                 }
                 i += 2;
             }
-            if i < a.len() {
-                eval(a[i], data, ctx)
-            } else {
-                Ok(Value::Null)
-            }
+            if i < a.len() { eval(a[i], data, ctx) } else { Ok(Value::Null) }
         }
         "and" => {
             let a = args_of(arg);
@@ -338,13 +330,14 @@ fn apply(op: &str, arg: &serde_json::Value, data: &Value, ctx: &mut Ctx) -> Res<
             if nums.is_empty() {
                 return Ok(Value::Null);
             }
-            Ok(Value::Num(nums.iter().copied().fold(nums[0], |x, y| {
-                if (op == "max") == (y > x) {
-                    y
-                } else {
-                    x
-                }
-            })))
+            Ok(Value::Num(
+                nums.iter().copied().fold(
+                    nums[0],
+                    |x, y| {
+                        if (op == "max") == (y > x) { y } else { x }
+                    },
+                ),
+            ))
         }
         "abs" => Ok(Value::Num(num1(arg, data, ctx, op)?.abs())),
         "ceil" => Ok(Value::Num(num1(arg, data, ctx, op)?.ceil())),

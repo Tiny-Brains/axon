@@ -1,7 +1,7 @@
 //! The counting rules and the operators — docs/dialect.md §3 and §4.4.
 
-use axon::dialect::eval::{run, Fault};
 use axon::dialect::Value;
+use axon::dialect::eval::{Fault, run};
 use serde_json::json;
 
 fn go(

@@ -6,7 +6,7 @@
 #[path = "../tests/common/mod.rs"]
 mod common;
 
-use axon::store::{digest, DirStore, Kind, Store};
+use axon::store::{DirStore, Kind, Store, digest};
 
 fn main() {
     let dir = std::env::args().nth(1).expect("usage: dump-fixtures <store-dir>");

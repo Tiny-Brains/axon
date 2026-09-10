@@ -6,7 +6,7 @@
 mod common;
 
 use axon::dialect::{Adapter, DType, Ports, Tensor};
-use common::{obs, reference_adapter, OBS};
+use common::{OBS, obs, reference_adapter};
 use serde_json::json;
 use std::sync::Arc;
 

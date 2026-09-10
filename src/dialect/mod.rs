@@ -18,7 +18,7 @@ pub mod ops;
 pub mod tensor;
 pub mod value;
 
-pub use digest::{evaluator_digest, DIALECT_VERSION};
+pub use digest::{DIALECT_VERSION, evaluator_digest};
 pub use eval::{Fault, Res};
 pub use tensor::{DType, Tensor};
 pub use value::Value;

@@ -5,14 +5,14 @@
 
 mod meta;
 
-pub use meta::{size_metric, GraphFacts};
+pub use meta::{GraphFacts, size_metric};
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use ort::session::{builder::GraphOptimizationLevel, RunOptions, Session, SessionInputValue};
+use ort::session::{RunOptions, Session, SessionInputValue, builder::GraphOptimizationLevel};
 use ort::value::{Outlet, Tensor as OrtTensor, Value as OrtValue};
 
 use crate::dialect::{DType, Ports, Tensor};

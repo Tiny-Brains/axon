@@ -157,6 +157,13 @@ Dockerfile         service image build
 
 ## Status
 
+**10 September 2026 — edition 2024.** `cargo fix --edition` needed no source changes; clippy took two
+`collapsible_if` sites into let-chains (`dialect/ops.rs`, `model/meta.rs`) and `cargo fmt` applied
+style edition 2024. `evaluator_digest` is unmoved by any of it — it hashes the dialect's canonical
+description rather than the binary, which `the_digest_is_stable_and_is_not_the_binary` asserts — so
+no adapter, replay or admission record changes meaning. `devops/cli` links this crate by path and
+still builds.
+
 **10 September 2026.** All six model calls and health routing are implemented, including SigV4
 storage and admission mirroring. `cargo test` passes the 49 local tests; the three S3 tests require
 an explicit live-store run and have not been exercised against a store. Loading is synchronous, the

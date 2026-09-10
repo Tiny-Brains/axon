@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
-use super::{key, read_body, Kind, Store, StoreError};
+use super::{Kind, Store, StoreError, key, read_body};
 
 type HmacSha256 = Hmac<Sha256>;
 type Headers = Vec<(String, String)>;

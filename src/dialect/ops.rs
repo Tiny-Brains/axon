@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use super::eval::{Ctx, Fault, Res};
-use super::tensor::{saturate, DType, Tensor};
+use super::tensor::{DType, Tensor, saturate};
 use super::value::Value;
 
 /// Order is fixed: `digest.rs` hashes this table, and a reordering would fire a re-validation
@@ -176,10 +176,11 @@ pub fn apply(op: &str, a: &[Value], ctx: &mut Ctx) -> Res<Value> {
             charge(ctx, idx.len(), n)?;
             let mut data = vec![0.0; n];
             for (i, v) in idx.iter().enumerate() {
-                if let Some(k) = v.to_num() {
-                    if k >= 0.0 && (k as usize) < depth {
-                        data[i * depth + k as usize] = 1.0;
-                    }
+                if let Some(k) = v.to_num()
+                    && k >= 0.0
+                    && (k as usize) < depth
+                {
+                    data[i * depth + k as usize] = 1.0;
                 }
             }
             Ok(t(Tensor::new(dt, vec![idx.len(), depth], data)))

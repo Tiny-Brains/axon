@@ -138,11 +138,7 @@ impl Axon {
 }
 
 fn adapter_reason(e: &dialect::Fault) -> &'static str {
-    if e.over_budget() {
-        "ADAPTER_FAILED"
-    } else {
-        "ADAPTER_INVALID"
-    }
+    if e.over_budget() { "ADAPTER_FAILED" } else { "ADAPTER_INVALID" }
 }
 
 fn describe(v: &serde_json::Value) -> String {
