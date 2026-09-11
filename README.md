@@ -157,6 +157,16 @@ Dockerfile         service image build
 
 ## Status
 
+**11 September 2026 — `TCP_NODELAY` on the listener.** tiny_http writes a reply's headers through a
+1 KiB buffer and its body as a second write, and sets no socket options, so on a kept-alive
+connection Nagle held every body over a kilobyte until the client's delayed ACK: 41.7 ms a `/play`
+in a Linux container from the stack's own image, against 0.09-0.14 ms with the option set. On the
+local ladder that was ~41 ms of every wave-turn, whatever the models cost. `server/http.rs::listen`
+now binds the listener with `TCP_NODELAY` and hands it to tiny_http, and accepted sockets inherit it.
+macOS acknowledges loopback at once, which is why it never showed off Linux. `cargo test` passes 52.
+**Not on the fleet yet**: the images have to be rebuilt and the pairs recreated (`design/tracker.md`,
+Throughput).
+
 **10 September 2026 — edition 2024.** `cargo fix --edition` needed no source changes; clippy took two
 `collapsible_if` sites into let-chains (`dialect/ops.rs`, `model/meta.rs`) and `cargo fmt` applied
 style edition 2024. `evaluator_digest` is unmoved by any of it — it hashes the dialect's canonical

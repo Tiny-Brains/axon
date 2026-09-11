@@ -18,6 +18,9 @@ ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# Only to set TCP_NODELAY on the listener before tiny_http takes it: tiny_http sets no socket
+# options, and std's listener exposes no way to -- see `server/http.rs::listen`.
+socket2 = "0.5"
 tiny_http = "0.12"
 ureq = "3"
 zstd = "0.13"

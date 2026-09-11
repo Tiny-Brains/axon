@@ -13,7 +13,7 @@ type Response = tiny_http::Response<std::io::Cursor<Vec<u8>>>;
 
 pub fn serve(axon: Arc<Axon>) -> std::io::Result<()> {
     let server = Arc::new(
-        tiny_http::Server::http(&axon.cfg.bind)
+        tiny_http::Server::from_listener(listen(&axon.cfg.bind)?, None)
             .map_err(|e| std::io::Error::other(e.to_string()))?,
     );
     eprintln!(
@@ -41,6 +41,34 @@ pub fn serve(axon: Arc<Axon>) -> std::io::Result<()> {
         let _ = h.join();
     }
     Ok(())
+}
+
+/// The listening socket, with `TCP_NODELAY` set so that every connection accepted from it has it
+/// too — Linux and the BSDs copy the option from the listener to the accepted socket.
+///
+/// tiny_http writes a response's headers through a 1 KiB buffer and its body in a second write, and
+/// sets no socket options. On a kept-alive connection Nagle's algorithm then holds the body until
+/// the client acknowledges the headers, and the client delays that ACK — about 40 ms on Linux —
+/// because it has nothing to send. Any reply over a kilobyte paid it, which is every real `/play`:
+/// measured at 41 ms of a 1-match wave's ~50 ms turn on the local stack, once per turn, whatever
+/// the models cost. macOS acknowledges loopback at once, so it never showed off Linux.
+fn listen(bind: &str) -> std::io::Result<std::net::TcpListener> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    use std::net::ToSocketAddrs;
+
+    let mut last = None;
+    for addr in bind.to_socket_addrs()? {
+        let socket = Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP))?;
+        // What `TcpListener::bind` does on Unix, so a restart does not wait out TIME_WAIT.
+        #[cfg(unix)]
+        socket.set_reuse_address(true)?;
+        socket.set_nodelay(true)?;
+        match socket.bind(&addr.into()).and_then(|()| socket.listen(128)) {
+            Ok(()) => return Ok(socket.into()),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other(format!("{bind} resolves to no address"))))
 }
 
 fn json<T: Serialize>(code: u16, body: &T) -> Response {
