@@ -241,6 +241,7 @@ inference.
   "opset": 17,
   "ops": ["Conv", "Relu", "Add", "MaxPool", "Reshape", "Gemm"],
   "unsupported_ops": [],
+  "weight_dtypes": ["float32"],         // what the WEIGHTS are stored in, not what the ports are
   "size_metric_bytes": 35_812,          // S = zstd-19(initializers) + zstd-19(adapter)
   "weights_zstd_bytes": 34_101, "adapter_zstd_bytes": 1_711,
   "weights_raw_bytes": 167_912, "adapter_raw_bytes": 8_204,

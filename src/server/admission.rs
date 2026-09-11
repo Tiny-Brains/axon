@@ -27,6 +27,7 @@ impl Axon {
             params: graph.facts.params,
             opset: graph.facts.opset,
             ops: graph.facts.ops.iter().cloned().collect(),
+            weight_dtypes: graph.facts.initializer_dtypes.iter().cloned().collect(),
             unsupported_ops: Vec::new(),
             size_metric_bytes: s,
             weights_zstd_bytes: w,

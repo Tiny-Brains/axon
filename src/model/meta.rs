@@ -22,6 +22,34 @@ pub struct GraphFacts {
     pub params: u64,
     /// The concatenated initializer payloads: what the size metric compresses. Weights, not file.
     pub initializer_bytes: Vec<u8>,
+    /// Every distinct element type the WEIGHTS are stored in, lowercased and sorted.
+    ///
+    /// The graph's input and output dtypes are already reported through `Port`, and they say
+    /// nothing about this: a network whose ports are float32 may hold int8 weights, which is the
+    /// whole point of quantisation. This is the fact a season needs to require one.
+    ///
+    /// Read off TensorProto's `data_type`, not inferred from which payload field carried the
+    /// bytes — an exporter may put int8 data in `raw_data` or in `int32_data`, and the declared
+    /// type is the one the runtime reads.
+    pub initializer_dtypes: BTreeSet<String>,
+}
+
+/// ONNX `TensorProto.DataType`, as the names a competitor writes in a season rule.
+///
+/// Unknown numbers become `type-<n>` rather than being dropped: a dtype the platform cannot name
+/// must still be visible to a rule that lists what is allowed, or a future ONNX type would pass a
+/// quantised-only season by being unrecognised.
+fn dtype_name(n: u64) -> String {
+    match n {
+        1 => "float32", 2 => "uint8", 3 => "int8", 4 => "uint16", 5 => "int16",
+        6 => "int32", 7 => "int64", 8 => "string", 9 => "bool", 10 => "float16",
+        11 => "float64", 12 => "uint32", 13 => "uint64", 14 => "complex64",
+        15 => "complex128", 16 => "bfloat16", 17 => "float8e4m3fn", 18 => "float8e4m3fnuz",
+        19 => "float8e5m2", 20 => "float8e5m2fnuz", 21 => "uint4", 22 => "int4",
+        23 => "float4e2m1",
+        other => return format!("type-{other}"),
+    }
+    .to_string()
 }
 
 struct Reader<'a> {
@@ -199,6 +227,12 @@ fn read_initializer(t: &[u8], f: &mut GraphFacts) {
                 }
                 Field::Fixed => {}
             },
+            // 2 is `data_type`: the element type this tensor is stored in.
+            2 => {
+                if let Field::Varint(d) = val {
+                    f.initializer_dtypes.insert(dtype_name(d));
+                }
+            }
             9 => {
                 if let Some(raw) = val.len() {
                     f.initializer_bytes.extend_from_slice(raw);

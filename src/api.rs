@@ -143,6 +143,12 @@ pub struct InspectReply {
     pub params: u64,
     pub opset: i64,
     pub ops: Vec<String>,
+    /// Every element type the WEIGHTS are stored in. Reported, not judged: whether a season
+    /// requires quantised weights is policy, and policy lives on the other side of this seam.
+    ///
+    /// Distinct from the dtypes on `inputs`/`outputs`, which describe the graph's ports — a
+    /// network with float32 ports may hold int8 weights, which is what quantisation IS.
+    pub weight_dtypes: Vec<String>,
     pub unsupported_ops: Vec<String>,
     /// `S`, both terms. Reported, not classified: the class table is jodi's, so a threshold change
     /// is not a redeploy of this binary.

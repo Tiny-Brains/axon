@@ -187,6 +187,15 @@ fn admission_inspects_and_validates_and_does_not_play() {
     // cost of running this graph can come from here.
     assert!(ins.inputs[0].shape.iter().any(|d| d.is_none()));
 
+    // The WEIGHTS' element types, which are not the ports'. This fixture is an ordinary float32
+    // export, so its ports and its weights agree -- but they are read from different places, and a
+    // season asking for quantised weights is asking about this list and not that one.
+    assert!(
+        ins.weight_dtypes.contains(&"float32".to_string()),
+        "weight dtypes were {:?}",
+        ins.weight_dtypes
+    );
+
     // ---- /validate: run the adapter, and time the graph at what it actually fed
     let val: ValidateRequest = serde_json::from_value(json!({
         "weights_hash": f.weights_hash, "adapter_hash": f.adapter_hash,
