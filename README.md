@@ -164,8 +164,9 @@ in a Linux container from the stack's own image, against 0.09-0.14 ms with the o
 local ladder that was ~41 ms of every wave-turn, whatever the models cost. `server/http.rs::listen`
 now binds the listener with `TCP_NODELAY` and hands it to tiny_http, and accepted sockets inherit it.
 macOS acknowledges loopback at once, which is why it never showed off Linux. `cargo test` passes 52.
-**Not on the fleet yet**: the images have to be rebuilt and the pairs recreated (`design/tracker.md`,
-Throughput).
+**On the local fleet the same day**: the three axon images rebuilt and only the sidecars recreated,
+and `/play` from `kalam-1` to its own sidecar went from 41.8 ms to 0.10 ms. Milliseconds per
+wave-turn are still to be read off `matches`, because the ladder was idle at rollout.
 
 **10 September 2026 — edition 2024.** `cargo fix --edition` needed no source changes; clippy took two
 `collapsible_if` sites into let-chains (`dialect/ops.rs`, `model/meta.rs`) and `cargo fmt` applied
